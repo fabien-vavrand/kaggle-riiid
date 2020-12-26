@@ -11,16 +11,15 @@ def update_pipeline(pipeline, X, y=None):
 
 
 def update_transformer(transformer, X, y=None):
-    if hasattr(transformer, 'update_transform'):
+    if hasattr(transformer, "update_transform"):
         return transformer.update_transform(X, y)
     else:
-        if hasattr(transformer, 'update'):
+        if hasattr(transformer, "update"):
             transformer.update(X, y)
         return transformer.transform(X)
 
 
 class DataFrameAnalyzer:
-
     def __init__(self, width=120, minimal=True, nulls_percent_after=0.01, uniques_percent_after=0.01):
         self.width = width
         self.minimal = minimal
@@ -31,24 +30,24 @@ class DataFrameAnalyzer:
         self.column_name_width = max([len(str(c)) for c in df.columns])
         self.type_width = max([len(str(df[c].dtype)) for c in df.columns])
 
-        self.header = '{}column | {}nulls | {}uniques | {}type | description{}'.format(
-            ' ' * max(self.column_name_width - 6, 0),
-            ' ' * max(self.space_to_display_number_of_rows - 5, 0),
-            ' ' * max(self.space_to_display_number_of_rows - 7, 0),
-            ' ' * max(self.type_width - 4, 0),
-            ' ' * self.width
-        )[:self.width]
+        self.header = "{}column | {}nulls | {}uniques | {}type | description{}".format(
+            " " * max(self.column_name_width - 6, 0),
+            " " * max(self.space_to_display_number_of_rows - 5, 0),
+            " " * max(self.space_to_display_number_of_rows - 7, 0),
+            " " * max(self.type_width - 4, 0),
+            " " * self.width,
+        )[: self.width]
 
-        self.header_separator = '+'.join(['-' * len(c) for c in self.header.split('|')])
+        self.header_separator = "+".join(["-" * len(c) for c in self.header.split("|")])
 
-        self.row_format = '{{:>{}}} | {{:>{}}} | {{:>{}}} | {{:>{}}} | {{:}}'.format(
+        self.row_format = "{{:>{}}} | {{:>{}}} | {{:>{}}} | {{:>{}}} | {{:}}".format(
             max(self.column_name_width, 6),
             max(self.space_to_display_number_of_rows, 5),
             max(self.space_to_display_number_of_rows, 7),
             max(self.type_width, 4),
         )
 
-        self.description_width = len(self.header.split('|')[-1]) - 1
+        self.description_width = len(self.header.split("|")[-1]) - 1
 
     def summary(self, df):
         for info in self.analyze(df):
@@ -56,7 +55,7 @@ class DataFrameAnalyzer:
 
     def analyze(self, df):
         self._build(df)
-        yield '{:,} rows x {:,} columns'.format(self.rows, self.columns)
+        yield "{:,} rows x {:,} columns".format(self.rows, self.columns)
         yield self.header
         yield self.header_separator
         for column in df.columns:
@@ -65,13 +64,13 @@ class DataFrameAnalyzer:
             n_unique = self._get_nunique(df[column])
             description = self._get_description(df[column])
             row = self.row_format.format(column_name, n_nulls, n_unique, str(df[column].dtype), description)
-            yield row[:self.width]
+            yield row[: self.width]
 
     def _get_nunique(self, series):
         try:
             return series.nunique()
         except:
-            return ''
+            return ""
 
     def _get_description(self, series):
         if pd.api.types.is_bool_dtype(series):
@@ -97,34 +96,34 @@ class DataFrameAnalyzer:
         smin = series.min()
         smax = series.max()
         smed = series.median()
-        description = '[min={:.1f}, median={:.1f}, max={:.1f}]'.format(smin, smed, smax)
+        description = "[min={:.1f}, median={:.1f}, max={:.1f}]".format(smin, smed, smax)
         if len(description) > self.description_width:
-            description = '[median={:.1f}]'.format(smed)
+            description = "[median={:.1f}]".format(smed)
         if len(description) > self.description_width:
-            description = ''
+            description = ""
         return description
 
     def _get_date_description(self, series):
-        dmin = series.min().strftime('%Y-%m-%d')
-        dmax = series.max().strftime('%Y-%m-%d')
-        description = '[{} to {}]'.format(dmin, dmax)
+        dmin = series.min().strftime("%Y-%m-%d")
+        dmax = series.max().strftime("%Y-%m-%d")
+        description = "[{} to {}]".format(dmin, dmax)
         if len(description) > self.description_width:
-            description = ''
+            description = ""
         return description
 
     def _get_category_description(self, series):
-        description = ''
+        description = ""
         values = series.value_counts()
         for i, v in values.items():
-            value_description = '{} ({:.0%})'.format(i, v / self.rows)
-            if description == '':
+            value_description = "{} ({:.0%})".format(i, v / self.rows)
+            if description == "":
                 if len(value_description) <= self.description_width:
                     description = value_description
                 else:
                     break
             else:
                 if len(description) + len(value_description) <= self.description_width - 2:
-                    description += ', ' + value_description
+                    description += ", " + value_description
                 else:
                     break
         return description
@@ -133,7 +132,7 @@ class DataFrameAnalyzer:
         types = series[-pd.isnull(series)].apply(lambda x: type(x))
         type_counts = types.value_counts()
         if len(type_counts) == 0:
-            return '<empty>'
+            return "<empty>"
         elif len(type_counts) > 1:
             return self._get_category_description(types)
         elif types.values[0] == str:
@@ -143,11 +142,11 @@ class DataFrameAnalyzer:
 
 
 def indexed_merge(x, y, left_on):
-    return pd.merge(x, y, left_on=left_on, right_index=True, how='left')
+    return pd.merge(x, y, left_on=left_on, right_index=True, how="left")
 
 
 def pre_filtered_indexed_merge(x, y, left_on):
-    return pd.merge(x, y.loc[y.index.isin(x[left_on])], left_on=left_on, right_index=True, how='left')
+    return pd.merge(x, y.loc[y.index.isin(x[left_on])], left_on=left_on, right_index=True, how="left")
 
 
 def fast_merge(x, y, left_on):
@@ -192,7 +191,7 @@ def tasks_group(r):
     elif r == 30:
         return 40
     elif r <= 50:
-        return math.ceil(r/10) * 10
+        return math.ceil(r / 10) * 10
     elif r <= 1000:
         return math.ceil(r / 100) * 100
     else:

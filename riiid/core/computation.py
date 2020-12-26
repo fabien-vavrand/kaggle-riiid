@@ -6,7 +6,7 @@ try:
     from numba.core import types
     from numba.typed import Dict
 except:
-    logging.warning('Numba not properly loaded')
+    logging.warning("Numba not properly loaded")
 
 
 @njit
@@ -43,7 +43,7 @@ def rolling_sum(data, dtype=np.int16):
 
 
 def last_lecture(X, column):
-    return last_lecture_feature(X['user_id'].values, X['content_type_id'].values, X[column].values)
+    return last_lecture_feature(X["user_id"].values, X["content_type_id"].values, X[column].values)
 
 
 @njit
@@ -112,7 +112,9 @@ def sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype):
     keys = []
     values = []
     weights = []
-    context = []  # contains the last values for each group. Required because of decay which can't be recomputed on rolling values
+    context = (
+        []
+    )  # contains the last values for each group. Required because of decay which can't be recomputed on rolling values
     sum = 0
     count = 0
 
@@ -177,8 +179,8 @@ def sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype):
 
 
 def last_feature_value_time(X, time_feature, feature_name):
-    user_id = X['user_id'].values
-    task_container_id = X['task_container_id'].values
+    user_id = X["user_id"].values
+    task_container_id = X["task_container_id"].values
     timestamp = X[time_feature].values
     feature = X[feature_name].values
     return _last_feature_value_time(user_id, task_container_id, timestamp, feature)
@@ -193,22 +195,13 @@ def _last_feature_value_time(user_id, task_container_id, timestamp, feature):
     for r in range(len(user_id)):
         if uid != user_id[r]:
             uid = user_id[r]
-            user_context = Dict.empty(
-                key_type=types.int64,
-                value_type=types.int64
-            )
-            task_context = Dict.empty(
-                key_type=types.int64,
-                value_type=types.int64
-            )
+            user_context = Dict.empty(key_type=types.int64, value_type=types.int64)
+            task_context = Dict.empty(key_type=types.int64, value_type=types.int64)
         if task_id != task_container_id[r]:
             task_id = task_container_id[r]
             for f, ts in task_context.items():
                 user_context[f] = ts
-            task_context = Dict.empty(
-                key_type=types.int64,
-                value_type=types.int64
-            )
+            task_context = Dict.empty(key_type=types.int64, value_type=types.int64)
         f = feature[r]
         if f in user_context:
             results[r] = user_context[f]
@@ -217,7 +210,9 @@ def _last_feature_value_time(user_id, task_container_id, timestamp, feature):
 
 
 def compute_user_answers_ratio(X, decay):
-    return _compute_user_answers_ratio(X['user_id'].values, X['user_answer'].values, X['correct_answer'].values, X[[0, 1, 2, 3]].values, decay)
+    return _compute_user_answers_ratio(
+        X["user_id"].values, X["user_answer"].values, X["correct_answer"].values, X[[0, 1, 2, 3]].values, decay
+    )
 
 
 @njit
@@ -226,7 +221,7 @@ def _compute_user_answers_ratio(user_id, user_answer, correct_answer, answers_ra
     users = []
     contexts = []
     user_context = np.zeros(5)
-    uid = - 1
+    uid = -1
     for r in range(len(user_id)):
         if user_id[r] != uid:
             if uid != -1:
@@ -257,20 +252,22 @@ def order_answer_ratios(ratios):
     return results
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import pandas as pd
-    df = pd.DataFrame({
-        'user_id': [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-        'tag_id': [1, 1, 0, 1, 0, 1, 1, 0, 0, 1],
-        'timestamp': [0, 100, 200, 200, 500, 0, 1000, 2200, 2200, 2200],
-        'task_container_id': [1, 1, 1, 2, 3, 1, 2, 2, 3, 3],
-        'target': [1, 0, 0, 1, 1, 0, 0, 1, 1, 1]
-    })
 
+    df = pd.DataFrame(
+        {
+            "user_id": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+            "tag_id": [1, 1, 0, 1, 0, 1, 1, 0, 0, 1],
+            "timestamp": [0, 100, 200, 200, 500, 0, 1000, 2200, 2200, 2200],
+            "task_container_id": [1, 1, 1, 2, 3, 1, 2, 2, 3, 3],
+            "target": [1, 0, 0, 1, 1, 0, 0, 1, 1, 1],
+        }
+    )
 
-    results, keys, values = rolling_score(df[['user_id', 'timestamp', 'task_container_id', 'target']].to_numpy(), 6)
-    df['sum'] = results[:, 0]
-    df['count'] = results[:, 1]
+    results, keys, values = rolling_score(df[["user_id", "timestamp", "task_container_id", "target"]].to_numpy(), 6)
+    df["sum"] = results[:, 0]
+    df["count"] = results[:, 1]
     history = {tuple(k): v for k, v in zip(keys, values)}
     print(df)
     print(history)

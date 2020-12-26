@@ -1,4 +1,3 @@
-
 import os
 import logging
 from riiid.core.data import DataLoader, preprocess_questions, preprocess_lectures, save_pkl, load_pkl
@@ -76,14 +75,14 @@ train, questions, lectures = loader.load_first_users(10000)
 questions = preprocess_questions(questions)
 lectures = preprocess_lectures(lectures)
 
-test = loader.load_tests('tests_0.pkl')
+test = loader.load_tests("tests_0.pkl")
 train = merge_test(train, test)
 
 model = RiiidModel(questions, lectures, params=PARAMS)
 X, y, train, valid = model.fit_transform(train)
-save_pkl((X, y, train, valid), path=os.path.join(MODELS_PATH, model.get_name('data.pkl')))
+save_pkl((X, y, train, valid), path=os.path.join(MODELS_PATH, model.get_name("data.pkl")))
 
 model.fit_lgbm(X[train], y[train], X[valid], y[valid])
-#model.fit_catboost(X[train], y[train], X[valid], y[valid])
+# model.fit_catboost(X[train], y[train], X[valid], y[valid])
 
 model.save(os.path.join(MODELS_PATH, model.get_name()))

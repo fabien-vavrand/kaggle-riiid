@@ -6,13 +6,12 @@ from riiid.core.data import load_pkl, save_pkl
 
 
 class CacheManager:
-
     def __init__(self, path, activated=True):
-        self.path = os.path.join(path, '.cache')
+        self.path = os.path.join(path, ".cache")
         self.activated = activated
 
     def _get_path(self, cache_id):
-        return os.path.join(self.path, cache_id + '.pkl')
+        return os.path.join(self.path, cache_id + ".pkl")
 
     def exists(self, cache_id):
         if not self.activated:
