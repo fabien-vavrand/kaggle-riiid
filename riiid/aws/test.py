@@ -10,7 +10,7 @@ CONTEXT.get_logger()
 try:
 
     while True:
-        logging.info(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        logging.info(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         time.sleep(60)
 
 except Exception as e:

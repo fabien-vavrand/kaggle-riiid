@@ -2,13 +2,12 @@ from doppel.aws.s3 import S3Bucket
 
 
 class S3CacheManager:
-
     def __init__(self, bucket, activated=True):
         self.bucket = S3Bucket(bucket)
         self.activated = activated
 
     def _get_path(self, cache_id):
-        return cache_id + '.pkl'
+        return cache_id + ".pkl"
 
     def exists(self, cache_id):
         if not self.activated:

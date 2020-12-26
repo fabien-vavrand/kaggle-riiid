@@ -10,14 +10,18 @@ from sklearn.impute import SimpleImputer
 from riiid.config import FLOAT_DTYPE
 from riiid.utils import make_tuple
 from riiid.core.utils import indexed_merge
-from riiid.core.computation import rolling_score, sorted_rolling_score, last_feature_value_time, compute_user_answers_ratio
+from riiid.core.computation import (
+    rolling_score,
+    sorted_rolling_score,
+    last_feature_value_time,
+    compute_user_answers_ratio,
+)
 
 
-np.seterr(divide='ignore', invalid='ignore')
+np.seterr(divide="ignore", invalid="ignore")
 
 
 class Smoother:
-
     def __init__(self, smoothing_min, smoothing_value):
         self.smoothing_min = smoothing_min
         self.smoothing_value = smoothing_value
@@ -30,11 +34,16 @@ class Smoother:
 
 
 class ScoreEncoder(Smoother):
-
     def __init__(
-        self, columns, parent_prior=None, cv=None,
-            smoothing_min=5, smoothing_value=1, noise=None,
-            updatable=False, transformable=False
+        self,
+        columns,
+        parent_prior=None,
+        cv=None,
+        smoothing_min=5,
+        smoothing_value=1,
+        noise=None,
+        updatable=False,
+        transformable=False,
     ):
         super().__init__(smoothing_min, smoothing_value)
         self.columns = columns
@@ -44,24 +53,24 @@ class ScoreEncoder(Smoother):
         self.updatable = updatable
         self.transformable = transformable
 
-        self.columns_name = '_'.join(self.columns if isinstance(self.columns, list) else [self.columns])
-        self.target_name = '{}_encoded'.format(self.columns_name)
-        self.target_columns = ['weight', self.target_name]
+        self.columns_name = "_".join(self.columns if isinstance(self.columns, list) else [self.columns])
+        self.target_name = "{}_encoded".format(self.columns_name)
+        self.target_columns = ["weight", self.target_name]
         self.random_gen = check_random_state(123)
 
         self.prior = None
         self.posteriors = {}
 
     def fit(self, X, y=None):
-        logging.info('- Fit target encoding for {}'.format(self.columns_name))
+        logging.info("- Fit target encoding for {}".format(self.columns_name))
         self.prior, self.posteriors = self._fit(X)
-        self.posteriors = self.posteriors.to_dict(orient='index')
+        self.posteriors = self.posteriors.to_dict(orient="index")
         return self
 
     def transform(self, X):
         X = self._merge_context(X)
-        X[self.target_name] = X['weight'] * X[self.target_name] + (1 - X['weight']) * self._get_prior(X, self.prior)
-        X = X.drop(columns=['weight'])
+        X[self.target_name] = X["weight"] * X[self.target_name] + (1 - X["weight"]) * self._get_prior(X, self.prior)
+        X = X.drop(columns=["weight"])
         return X
 
     def fit_transform(self, X, y=None):
@@ -85,30 +94,30 @@ class ScoreEncoder(Smoother):
         return results
 
     def _fit(self, X):
-        """ Remove duplicates
+        """Remove duplicates
         columns = self.columns.copy() if isinstance(self.columns, list) else [self.columns]
         columns += ['user_id', 'content_id', 'answered_correctly']
         columns = list(set(columns))
         X = X[columns].drop_duplicates(['user_id', 'content_id'], keep='first')
         """
 
-        prior = X['answered_correctly'].mean()
-        posteriors = X.groupby(self.columns)['answered_correctly'].agg([np.sum, 'count'])
-        posteriors['sum'] = posteriors['sum'].astype(np.int64)
+        prior = X["answered_correctly"].mean()
+        posteriors = X.groupby(self.columns)["answered_correctly"].agg([np.sum, "count"])
+        posteriors["sum"] = posteriors["sum"].astype(np.int64)
         posteriors = self._process_posteriors(posteriors)
         return prior, posteriors
 
     def _process_posteriors(self, posteriors):
-        posteriors['weight'] = self.smooth(posteriors['count'])
-        posteriors[self.target_name] = posteriors['sum'] / posteriors['count']
+        posteriors["weight"] = self.smooth(posteriors["count"])
+        posteriors[self.target_name] = posteriors["sum"] / posteriors["count"]
         return posteriors
 
     def _transform(self, X, prior, posteriors, noise=None):
-        X = pd.merge(X, posteriors[self.target_columns], on=self.columns, how='left').set_index(X.index)
-        X['weight'] = X['weight'].fillna(0)
-        X[self.target_name] = X[self.target_name].fillna(prior)   # Fill anything won't change the result as weight = 0
-        X[self.target_name] = X['weight'] * X[self.target_name] + (1 - X['weight']) * self._get_prior(X, prior)
-        X = X.drop(columns=['weight'])
+        X = pd.merge(X, posteriors[self.target_columns], on=self.columns, how="left").set_index(X.index)
+        X["weight"] = X["weight"].fillna(0)
+        X[self.target_name] = X[self.target_name].fillna(prior)  # Fill anything won't change the result as weight = 0
+        X[self.target_name] = X["weight"] * X[self.target_name] + (1 - X["weight"]) * self._get_prior(X, prior)
+        X = X.drop(columns=["weight"])
 
         if noise is not None:
             X[self.target_name] += (self.random_gen.rand(len(X)) - 0.5) * noise
@@ -155,13 +164,10 @@ class ScoreEncoder(Smoother):
             col_id = self._get_column_id(values[r])
             try:
                 posterior = self.posteriors[col_id]
-                posterior['sum'] += int(target[r])
-                posterior['count'] += 1
+                posterior["sum"] += int(target[r])
+                posterior["count"] += 1
             except KeyError:
-                posterior = {
-                    'sum': int(target[r]),
-                    'count': 1
-                }
+                posterior = {"sum": int(target[r]), "count": 1}
                 self.posteriors[col_id] = posterior
             self._process_posteriors(posterior)
 
@@ -174,8 +180,17 @@ class ScoreEncoder(Smoother):
 
 
 class RollingScoreEncoder(Smoother):
-
-    def __init__(self, columns, rolling=None, smoothing_min=5, smoothing_value=1, count=False, weighted=False, decay=None, time_since_last=False):
+    def __init__(
+        self,
+        columns,
+        rolling=None,
+        smoothing_min=5,
+        smoothing_value=1,
+        count=False,
+        weighted=False,
+        decay=None,
+        time_since_last=False,
+    ):
         super().__init__(smoothing_min, smoothing_value)
         self.columns = columns
         self.rolling = rolling
@@ -185,23 +200,23 @@ class RollingScoreEncoder(Smoother):
         self.time_since_last = time_since_last
 
         if self.rolling and self.time_since_last:
-            raise ValueError('Not allowed to compute time and tasks when rolling')
+            raise ValueError("Not allowed to compute time and tasks when rolling")
 
         if self.rolling and self.decay is not None:
-            raise ValueError('Not allowed to use rolling and decay at the same time')
+            raise ValueError("Not allowed to use rolling and decay at the same time")
 
         if self.time_since_last and len(self.columns) != 2:
-            raise ValueError('Expecting 2 columns when computing time or tasks')
+            raise ValueError("Expecting 2 columns when computing time or tasks")
 
-        rolling_name = '_{}'.format(self.rolling) if self.rolling else ''
-        decay_name = '_decay_{}'.format(self.decay) if self.decay is not None else ''
-        weighted_name = '_weighted' if self.weighted else ''
-        self.name = '_'.join(self.columns) + weighted_name + '_score' + rolling_name + decay_name
-        self.name_count = '_'.join(self.columns) + weighted_name + '_count' + rolling_name + decay_name
+        rolling_name = "_{}".format(self.rolling) if self.rolling else ""
+        decay_name = "_decay_{}".format(self.decay) if self.decay is not None else ""
+        weighted_name = "_weighted" if self.weighted else ""
+        self.name = "_".join(self.columns) + weighted_name + "_score" + rolling_name + decay_name
+        self.name_count = "_".join(self.columns) + weighted_name + "_count" + rolling_name + decay_name
         self.compute_dtype = np.float64 if self.weighted or self.decay else np.int16
         if self.time_since_last:
-            self.time_name = 'time_since_last_{}'.format(self.columns[-1])
-            self.tasks_name = 'tasks_since_last_{}'.format(self.columns[-1])
+            self.time_name = "time_since_last_{}".format(self.columns[-1])
+            self.tasks_name = "tasks_since_last_{}".format(self.columns[-1])
 
         self.prior = None
         self.context = {}
@@ -221,15 +236,19 @@ class RollingScoreEncoder(Smoother):
         return X
 
     def _fit(self, X, y):
-        logging.info('- Fit rolling score encoder for columns {}, rolling {}, weighted {}, decay {}'.format(self.columns, self.rolling, self.weighted, self.decay))
+        logging.info(
+            "- Fit rolling score encoder for columns {}, rolling {}, weighted {}, decay {}".format(
+                self.columns, self.rolling, self.weighted, self.decay
+            )
+        )
         self.global_score = y.mean()
-        if self.columns[-1] + '_encoded' in X.columns:
-            self.prior = self.columns[-1] + '_encoded'
+        if self.columns[-1] + "_encoded" in X.columns:
+            self.prior = self.columns[-1] + "_encoded"
         X = self._compute_rolling_scores(X)
 
         if self.time_since_last:
-            X = self._compute_last_time_feature(X, self.time_name, 'timestamp')
-            X = self._compute_last_time_feature(X, self.tasks_name, 'task_container_id')
+            X = self._compute_last_time_feature(X, self.time_name, "timestamp")
+            X = self._compute_last_time_feature(X, self.tasks_name, "task_container_id")
 
         return X
 
@@ -237,8 +256,8 @@ class RollingScoreEncoder(Smoother):
         X[feature_name] = last_feature_value_time(X, feature, self.columns[-1])
 
         # Add to context
-        context = X[['user_id', self.columns[-1], feature]].drop_duplicates(['user_id', self.columns[-1]], keep='last')
-        user_id = context['user_id'].values
+        context = X[["user_id", self.columns[-1], feature]].drop_duplicates(["user_id", self.columns[-1]], keep="last")
+        user_id = context["user_id"].values
         column_values = context[self.columns[-1]].values
         feature_values = context[feature].values
 
@@ -251,12 +270,26 @@ class RollingScoreEncoder(Smoother):
         return X
 
     def _compute_rolling_scores(self, X):
-        data = X[self.columns + ['timestamp', 'task_container_id', 'answered_correctly']].values
-        answer_weights = X['answer_weight'].values
-        if len(self.columns) == 1 and self.columns[0] == 'user_id':
-            results, keys, values, weights, contexts = sorted_rolling_score(data, answer_weights, rolling=self.rolling, weighted=self.weighted, decay=self.decay, dtype=self.compute_dtype)
+        data = X[self.columns + ["timestamp", "task_container_id", "answered_correctly"]].values
+        answer_weights = X["answer_weight"].values
+        if len(self.columns) == 1 and self.columns[0] == "user_id":
+            results, keys, values, weights, contexts = sorted_rolling_score(
+                data,
+                answer_weights,
+                rolling=self.rolling,
+                weighted=self.weighted,
+                decay=self.decay,
+                dtype=self.compute_dtype,
+            )
         else:
-            results, keys, values, weights, contexts = rolling_score(data, answer_weights, rolling=self.rolling, weighted=self.weighted, decay=self.decay, dtype=self.compute_dtype)
+            results, keys, values, weights, contexts = rolling_score(
+                data,
+                answer_weights,
+                rolling=self.rolling,
+                weighted=self.weighted,
+                decay=self.decay,
+                dtype=self.compute_dtype,
+            )
 
         X[self.name] = results[:, 0]
         X[self.name_count] = results[:, 1]
@@ -308,8 +341,8 @@ class RollingScoreEncoder(Smoother):
             X = X.drop(columns=[self.name_count])
 
         if self.time_since_last:
-            X[self.time_name] = X['timestamp'] - X[self.time_name]
-            X[self.tasks_name] = X['task_container_id'] - X[self.tasks_name]
+            X[self.time_name] = X["timestamp"] - X[self.time_name]
+            X[self.tasks_name] = X["task_container_id"] - X[self.tasks_name]
         return X
 
     def _downcast(self, X):
@@ -365,9 +398,9 @@ class RollingScoreEncoder(Smoother):
             X[self.name_count] = results[:, 1]
         if self.time_since_last:
             X[self.time_name] = time_results[:, 0]
-            X[self.time_name] = X['timestamp'] - X[self.time_name]
+            X[self.time_name] = X["timestamp"] - X[self.time_name]
             X[self.tasks_name] = time_results[:, 1]
-            X[self.tasks_name] = X['task_container_id'] - X[self.tasks_name]
+            X[self.tasks_name] = X["task_container_id"] - X[self.tasks_name]
         return X
 
     def update(self, X, y=None):
@@ -375,10 +408,10 @@ class RollingScoreEncoder(Smoother):
         # Trick to speed up the .values
         values = [X[column].values for column in self.columns]
         target = y.values
-        weights = X['answer_weight'].values
+        weights = X["answer_weight"].values
         if self.time_since_last:
-            timestamp = X['timestamp'].values
-            task_container_id = X['task_container_id'].values
+            timestamp = X["timestamp"].values
+            task_container_id = X["task_container_id"].values
         rows, columns = len(X), len(values)
         decayed = set()  # As we don't want to apply decay multiple times for a multi questions task, we on
         for r in range(rows):
@@ -423,7 +456,9 @@ class RollingScoreEncoder(Smoother):
                 if self.weighted:
                     context0 *= weights[r]
                     context1 *= weights[r]
-                context = self._add_to_context([v[r] for v in values], [int(target[r])], [weights[r]], [context0, context1])
+                context = self._add_to_context(
+                    [v[r] for v in values], [int(target[r])], [weights[r]], [context0, context1]
+                )
                 if self.time_since_last:
                     context.append(int(timestamp[r]))
                     context.append(task_container_id[r])
@@ -440,16 +475,15 @@ class RollingScoreEncoder(Smoother):
 
 
 class RatioEncoder:
-
     def __init__(self, column, updatable=False):
         self.column = column
         self.updatable = updatable
-        self.ratio_name = '{}_ratio'.format(column)
+        self.ratio_name = "{}_ratio".format(column)
         self.nrows = None
         self.ratios = {}
 
     def fit(self, X, y=None):
-        logging.info('- Fit ratio encoder for {}'.format(self.column))
+        logging.info("- Fit ratio encoder for {}".format(self.column))
         self.nrows = len(X)
         self.ratios = X.groupby(self.column).size().to_dict()
         return self

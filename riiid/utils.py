@@ -9,8 +9,8 @@ import lightgbm as lgb
 
 
 def configure_console_logging():
-    LOGGING_FORMAT = '%(asctime)-15s %(name)-15s %(levelname)-8s %(message)s'
-    DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
+    LOGGING_FORMAT = "%(asctime)-15s %(name)-15s %(levelname)-8s %(message)s"
+    DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
     logger = logging.getLogger()
     handler = logging.StreamHandler()
@@ -37,8 +37,11 @@ def downcast_int(series, allow_unsigned=False):
     else:
         types = [np.int8, np.int16, np.int32, np.int64]
     for t in types:
-        if np.iinfo(t).min <= min_value and max_value <= np.iinfo(t).max \
-                and np.dtype(t).itemsize < series.dtype.itemsize:
+        if (
+            np.iinfo(t).min <= min_value
+            and max_value <= np.iinfo(t).max
+            and np.dtype(t).itemsize < series.dtype.itemsize
+        ):
             return series.astype(t)
     return series
 
@@ -62,7 +65,7 @@ def make_iterable(ids):
 def logging_callback():
     def callback(env):
         if env.iteration % 100 == 0:
-            logging.info('[{}] AUC = {:.5%}'.format(env.iteration, env.evaluation_result_list[0][2]))
+            logging.info("[{}] AUC = {:.5%}".format(env.iteration, env.evaluation_result_list[0][2]))
 
     return callback
 

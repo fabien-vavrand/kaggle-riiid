@@ -5,7 +5,6 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class ColumnsSelector(BaseEstimator, TransformerMixin):
-
     def __init__(self, columns_to_drop=None, validate=False):
         self.columns_to_drop = columns_to_drop
         self.validate = validate
@@ -22,7 +21,7 @@ class ColumnsSelector(BaseEstimator, TransformerMixin):
         columns = [c for c in self.columns if c in X.columns]
         if self.validate and len(columns) < len(self.columns):
             missing = set(self.columns).difference(columns)
-            raise ValueError(f'Missing columns: {missing}')
+            raise ValueError(f"Missing columns: {missing}")
         return X[columns]
 
     def update_transform(self, X, y=None):
@@ -30,7 +29,6 @@ class ColumnsSelector(BaseEstimator, TransformerMixin):
 
 
 class TypesTransformer(TransformerMixin):
-
     def __init__(self, float_dtype=None):
         self.float_dtype = float_dtype
         self.dtypes = None
@@ -55,21 +53,20 @@ class TypesTransformer(TransformerMixin):
 
 
 class MemoryUsageLogger(TransformerMixin):
-
     def __init__(self, name=None, details=False):
         self.name = name
         self.details = details
 
     def fit(self, X, y):
-        logging.info('[{} rows x {} columns] Memory: {:.1f}Mo'.format(
-            X.shape[0], X.shape[1], X.memory_usage().sum() / 1024 ** 2)
+        logging.info(
+            "[{} rows x {} columns] Memory: {:.1f}Mo".format(X.shape[0], X.shape[1], X.memory_usage().sum() / 1024 ** 2)
         )
         if self.details:
             for index, value in X.memory_usage().items():
-                if index == 'Index':
-                    logging.info('{}{:<40}: {:.1f}Mo'.format(' ' * 17, index, value / 1024 ** 2))
+                if index == "Index":
+                    logging.info("{}{:<40}: {:.1f}Mo".format(" " * 17, index, value / 1024 ** 2))
                 else:
-                    logging.info('[{:<14}] {:<40}: {:.1f}Mo'.format(str(X[index].dtype), index, value / 1024 ** 2))
+                    logging.info("[{:<14}] {:<40}: {:.1f}Mo".format(str(X[index].dtype), index, value / 1024 ** 2))
         return self
 
     def transform(self, X):
@@ -78,7 +75,6 @@ class MemoryUsageLogger(TransformerMixin):
 
 # not used
 class RatioTransformer:
-
     def __init__(self, name, numerator, denominator):
         self.name = name
         self.numerator = numerator
@@ -96,7 +92,6 @@ class RatioTransformer:
 
 
 class WeightedAnswerTransformer:
-
     def __init__(self, column):
         self.column = column
 
@@ -115,13 +110,14 @@ class WeightedAnswerTransformer:
         return X
 
     def _transform(self, X):
-        X['answer_weight'] = (X['answered_correctly'] == 0) * X[self.column] + (X['answered_correctly'] == 1) * (1 - X[self.column])
-        #X['answer_weight'] = -((X['answered_correctly'] == 0) * np.log(1-X['content_id_encoded']) + (X['answered_correctly'] == 1) * np.log(X['content_id_encoded']))
+        X["answer_weight"] = (X["answered_correctly"] == 0) * X[self.column] + (X["answered_correctly"] == 1) * (
+            1 - X[self.column]
+        )
+        # X['answer_weight'] = -((X['answered_correctly'] == 0) * np.log(1-X['content_id_encoded']) + (X['answered_correctly'] == 1) * np.log(X['content_id_encoded']))
         return X
 
 
 class DensityTransformer:
-
     def __init__(self, columns):
         self.columns = columns
 
@@ -129,7 +125,7 @@ class DensityTransformer:
         return self
 
     def transform(self, X):
-        X['user_id_density'] = (X['user_id_count'] / X['timestamp'] * 1000 * 60 * 60 * 24).fillna(0)
+        X["user_id_density"] = (X["user_id_count"] / X["timestamp"] * 1000 * 60 * 60 * 24).fillna(0)
         for column in self.columns:
-            X['{}_density'.format(column.replace('_count', ''))] = (X[column] / X['user_id_count']).fillna(0)
+            X["{}_density".format(column.replace("_count", ""))] = (X[column] / X["user_id_count"]).fillna(0)
         return X

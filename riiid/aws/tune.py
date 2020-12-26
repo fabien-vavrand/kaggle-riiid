@@ -21,7 +21,7 @@ def score_params(params):
     questions = preprocess_questions(questions)
     lectures = preprocess_lectures(lectures)
 
-    test = loader.load_tests('tests_0.pkl')
+    test = loader.load_tests("tests_0.pkl")
     train = merge_test(train, test)
     del test
 
@@ -36,18 +36,14 @@ try:
     while True:
         params = draw_params()
         best_score, best_iter = score_params(params)
-        results = {
-            'params': params,
-            'best_score': best_score,
-            'best_iteration': best_iter
-        }
-        CONTEXT.save_json(results, os.path.join('results', str(uuid.uuid4()) + '.json'))
+        results = {"params": params, "best_score": best_score, "best_iteration": best_iter}
+        CONTEXT.save_json(results, os.path.join("results", str(uuid.uuid4()) + ".json"))
 
 except Exception as e:
     logging.info(str(e))
 
 finally:
-    logging.info('Finished')
+    logging.info("Finished")
     time.sleep(30)
     if CONTEXT.is_doppel:
         DoppelProject(CONTEXT.doppel_name).terminate()

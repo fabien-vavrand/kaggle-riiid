@@ -9,14 +9,14 @@ from riiid.config import PATH, INPUT_PATH, MODELS_PATH, PARAMS
 
 configure_console_logging()
 
-model: RiiidModel = RiiidModel.load(os.path.join(MODELS_PATH, 'model_20201222_175136.zip'))
-X, y, train, valid = load_pkl(os.path.join(MODELS_PATH, model.get_name('data.pkl')))
+model: RiiidModel = RiiidModel.load(os.path.join(MODELS_PATH, "model_20201222_175136.zip"))
+X, y, train, valid = load_pkl(os.path.join(MODELS_PATH, model.get_name("data.pkl")))
 
-add_neural = os.path.exists(os.path.join(MODELS_PATH, model.get_name('neural.zip')))
+add_neural = os.path.exists(os.path.join(MODELS_PATH, model.get_name("neural.zip")))
 if add_neural:
-    logging.info('Adding neural model')
-    neural_model = NeuralModel.load(os.path.join(MODELS_PATH, model.get_name('neural.zip')))
-    model.models.append({'model': neural_model})
+    logging.info("Adding neural model")
+    neural_model = NeuralModel.load(os.path.join(MODELS_PATH, model.get_name("neural.zip")))
+    model.models.append({"model": neural_model})
 
 model.fit_blender(X[valid], y[valid])
 
