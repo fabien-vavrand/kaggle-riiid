@@ -45,11 +45,15 @@ TODO:
 - last lecture type
 - % of tags in common with previous question
 - investigate none in answer_0_ratio
-- use weighting to rebalance the dataset
+- compute content_id_encoded after removing duplicates
+- user_id content_id had explanations count
 
-NOT IMPLEMENTED AT PREDICT TIME
-- decay for UserScoreEncoder
-- answer ratio in UserAnswerEncoder
+FEATURES TO TRY
+- prior content_id answered_correctly
+- time since first content_id
+- number of questions during last day / week / month
+- time between n-1 and n-2 content_id
+- % of tags in common with previous questions
 
 TRAIN 10000 users
 - Best score = 78.85%, in 305 iterations
@@ -57,6 +61,8 @@ TRAIN 10000 users
 - Best score = 78.92%, in 435 iterations
 - Best score = 78.97%, in 412 iterations (add decay on user and user/question_part)
 - Best score = 78.95%, in 291 iterations
+- Best score = 78.96%, in 646 iterations
+- Best score = 78.92%, in 371 iterations (after refactoring incorrect answers encoder, maybe removing a bit of overfitting)
 
 TRAIN 30000 users
 - Best score = 79.50%, in 650 iterations
@@ -77,7 +83,7 @@ model = RiiidModel(questions, lectures, params=PARAMS)
 X, y, train, valid = model.fit_transform(train)
 save_pkl((X, y, train, valid), path=os.path.join(MODELS_PATH, model.get_name('data.pkl')))
 
-model.fit_model(X[train], y[train], X[valid], y[valid])
-#model.refit_model(X, y)
+model.fit_lgbm(X[train], y[train], X[valid], y[valid])
+#model.fit_catboost(X[train], y[train], X[valid], y[valid])
 
 model.save(os.path.join(MODELS_PATH, model.get_name()))

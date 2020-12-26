@@ -76,6 +76,7 @@ class MemoryUsageLogger(TransformerMixin):
         return X
 
 
+# not used
 class RatioTransformer:
 
     def __init__(self, name, numerator, denominator):

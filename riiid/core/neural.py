@@ -1,9 +1,11 @@
 import os
 import io
+import scipy
 import pickle
 import zipfile
 import logging
 import tempfile
+import numpy as np
 
 from sklearn.preprocessing import PowerTransformer, StandardScaler
 from sklearn.impute import SimpleImputer
@@ -16,6 +18,52 @@ import tensorflow.keras.backend as K
 
 
 #os.environ['TF_CPP_MIN_VLOG_LEVEL'] = 3
+
+class ScalingTransformer:
+
+    def __init__(self, min_unique_values=5, skewness_threshold=1):
+        self.min_unique_values = min_unique_values
+        self.skewness_threshold = skewness_threshold
+        self.rows = None
+        self.columns = None
+        self.standard_features = None
+        self.skewed_features = None
+        self.standard_scaler = None
+        self.power_scaler = None
+
+    def fit(self, X, y=None):
+        logging.info('- Fit scaling transformer')
+        self.rows, self.columns = X.shape
+        self.standard_features = []
+        self.skewed_features = []
+        self.standard_scaler = StandardScaler()
+        self.power_scaler = PowerTransformer()
+
+        for i in range(self.columns):
+            n_uniques = len(np.unique(X[:, i]))
+            if n_uniques <= self.min_unique_values:
+                self.standard_features.append(i)
+            else:
+                skewness = scipy.stats.skew(X[:, i])
+                if skewness > self.skewness_threshold:
+                    self.skewed_features.append(i)
+                else:
+                    self.standard_features.append(i)
+
+        self.standard_features = np.array(self.standard_features)
+        self.skewed_features = np.array(self.skewed_features)
+        logging.info('{} standard features'.format(len(self.standard_features)))
+        logging.info('{} skewed features'.format(len(self.skewed_features)))
+
+        self.standard_scaler.fit(X[:, self.standard_features])
+        self.power_scaler.fit(X[:, self.skewed_features])
+        return self
+
+    def transform(self, X):
+        return np.hstack([
+            self.standard_scaler.transform(X[:, self.standard_features]),
+            self.power_scaler.transform(X[:, self.skewed_features]),
+        ])
 
 
 class TrainingLogs(keras.callbacks.Callback):
@@ -45,7 +93,7 @@ class NeuralModel:
         logging.info('- Fitting mlp pipeline')
         self.pipeline = make_pipeline(
             SimpleImputer(strategy='median', add_indicator=True),
-            StandardScaler()
+            ScalingTransformer()
         )
 
         X_train = self.pipeline.fit_transform(X_train)
@@ -93,7 +141,7 @@ class NeuralModel:
 
     def predict(self, X):
         X = self.pipeline.transform(X)
-        y = self.model.predict(X)
+        y = self.model.predict(X)[:,0]
         return y
 
     def save(self, path=None):

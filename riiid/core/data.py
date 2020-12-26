@@ -115,6 +115,13 @@ def preprocess_questions(questions):
             x = x.split(' ')
             return int(x[0])
 
+    def get_two_tags(x):
+        if pd.isnull(x):
+            return []
+        else:
+            x = x.split(' ')
+            return x[:2]
+
     questions['n_tags'] = questions['tags'].apply(count_tags).astype(np.int8)
     questions['question_tag'] = questions['tags'].apply(get_first_tag)
     questions['question_tag'] = downcast_int(questions['question_tag'])
@@ -127,4 +134,11 @@ def preprocess_questions(questions):
 
 def preprocess_lectures(lectures):
     lectures.rename(columns={'part': 'lecture_part', 'tag': 'lecture_tag'}, inplace=True)
+    lectures['type_of'] = lectures['type_of'].map({
+        'concept': 0,
+        'solving question': 1,
+        'intention': 2,
+        'starter': 2
+    })
+    lectures['type_of'] = downcast_int(lectures['type_of'])
     return lectures

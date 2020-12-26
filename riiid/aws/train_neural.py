@@ -1,5 +1,6 @@
 import time
 import logging
+import numpy as np
 
 from doppel import DoppelProject, DoppelContext
 from doppel.aws.s3 import S3Bucket
@@ -10,11 +11,11 @@ from riiid.core.neural import NeuralModel
 context = DoppelContext()
 context.get_logger()
 
-"""
 try:
     logging.info('Loading data')
     bucket = S3Bucket('model-20201219-093629')
     X = bucket.load_pickle('X')
+    X = X.to_numpy(dtype=np.float32)
     y = bucket.load_pickle('y')
     train = bucket.load_pickle('train')
     valid = bucket.load_pickle('valid')
@@ -32,4 +33,3 @@ finally:
     time.sleep(30)
     if context.is_doppel:
         DoppelProject(context.doppel_name).terminate()
-"""

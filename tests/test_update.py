@@ -32,7 +32,7 @@ def generate_reference_and_validation_datasets(n=1000, validation_ratio=0.5):
     train_compare, validation = merge_test(train, test, validation_ratio=validation_ratio)
     model = RiiidModel(questions, lectures, PARAMS)
     X_compare, y, train, valid = model.fit_transform(train_compare)
-    model.fit_model(X_compare[train], y[train], X_compare[valid], y[valid])
+    model.fit_lgbm(X_compare[train], y[train], X_compare[valid], y[valid])
 
     # Loading model
     model.save(os.path.join(TEST_PATH, 'model_test.zip'))

@@ -226,11 +226,11 @@ class LecturesFeaturer:
         X['lecture_id'] = X['content_id'] * (X['content_type_id'] == 1)
         X = pd.merge(X, self.lectures, how='left', left_on='lecture_id', right_index=True)
 
-        logging.info('count lectures')
+        # Count lectures
         counts = rolling_sum(X[['user_id', 'content_type_id']].to_numpy())
         X['n_lectures'] = counts[:, 0]
 
-        logging.info('count lectures parts')
+        # Count lectures parts
         parts_features = [f'n_lectures_part{part}' for part in list(range(1, 8))]
         X['lecture_part'] = X['lecture_part'] - 1
         counts = rolling_categories_count(X[['user_id', 'lecture_part']].to_numpy(), n_categories=7)
@@ -238,7 +238,8 @@ class LecturesFeaturer:
             X[feature] = counts[:, i]
 
         """
-        logging.info('count lectures types of')
+        # Count lectures type of
+        # deprecated because of type_of encoding
         types_of = ['concept', 'solving question', 'intention', 'starter']
         types_of_features = [f"n_lectures_{type_of.replace(' ', '_')}" for type_of in types_of]
         X['type_of'] = X['type_of'].map({to: i for i, to in enumerate(types_of)})
@@ -248,7 +249,7 @@ class LecturesFeaturer:
         """
 
         """
-        logging.info('count lectures tags')
+        # Count lectures tags
         tags = sorted(self.lectures['lecture_tag'].unique())
         tags_features = [f"n_lectures_tag{tag}" for tag in tags]
         X['lecture_tag'] = X['lecture_tag'].map({tag: i for i, tag in enumerate(tags)})
@@ -265,16 +266,17 @@ class LecturesFeaturer:
         X['lecture_id'] = last_lecture(X, 'lecture_id')
         X['lecture_tag'] = last_lecture(X, 'lecture_tag')
         X['lecture_part'] = last_lecture(X, 'lecture_part')
+        X['type_of'] = last_lecture(X, 'type_of')
 
         X['lecture_id'] = X['lecture_id'].fillna(-1).astype(np.int16)
         X['lecture_tag'] = X['lecture_tag'].fillna(-1).astype(np.int16)
         X['lecture_part'] = X['lecture_part'].fillna(-1).astype(np.int8)
+        X['type_of'] = X['type_of'].fillna(-1).astype(np.int8)
 
         self.features = ['n_lectures'] + parts_features + last_lecture_features
         #X = X.drop(columns=['lecture_id', 'lecture_tag', 'lecture_part', 'type_of'])
-        X = X.drop(columns=['type_of'])
 
-        logging.info('building context')
+        # Building context
         self.context = X[['user_id'] + self.features].drop_duplicates('user_id', keep='last').set_index('user_id').to_dict(orient='index')
         return X
 

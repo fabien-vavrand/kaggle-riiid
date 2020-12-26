@@ -72,7 +72,7 @@ def score_params(params, n_users):
 
     model = RiiidModel(questions, lectures, params)
     X, y, train, valid = model.fit_transform(train)
-    model.fit_model(X[train], y[train], X[valid], y[valid])
+    model.fit_lgbm(X[train], y[train], X[valid], y[valid])
 
     return model.best_score, model.best_iteration
 

@@ -9,15 +9,20 @@ import typing as t
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
+
 from pathlib import Path
+from catboost import CatBoostClassifier
 from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import Pipeline, make_pipeline
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.model_selection import cross_val_score
 
 from riiid.utils import downcast_int, logging_callback, keys_to_int, get_riiid_directory
 from riiid.config import FLOAT_DTYPE
 from riiid.core.data import load_pkl
 from riiid.core.utils import update_pipeline, DataFrameAnalyzer
-from riiid.core.encoders import ScoreEncoder, AnswersEncoder, RollingScoreEncoder, RatioEncoder, UserAnswersEncoder
+from riiid.core.encoders import ScoreEncoder, RollingScoreEncoder, RatioEncoder
+from riiid.core.answers import AnswersEncoder, IncorrectAnswersEncoder, UserAnswersFrequencyEncoder
 from riiid.core.transformers import ColumnsSelector, MemoryUsageLogger, RatioTransformer, WeightedAnswerTransformer, TypesTransformer, DensityTransformer
 from riiid.core.featurers import SessionFeaturer, LecturesFeaturer, QuestionsFeaturer, LaggingFeaturer
 from riiid.core.embedders import QuestionsEmbedder, AnswersCorrectnessEmbedder
@@ -35,9 +40,10 @@ class RiiidModel:
         self.lectures_pipeline: Pipeline = None
         self.pipeline: Pipeline = None
         self.features: t.List[str] = None
-        self.model: lgb.LGBMModel = None
-        self.best_score: float = None
-        self.best_iteration: int = None
+        self.models: t.List[t.Dict[str, t.Any]] = []  # List of models implementing predict or predict_proba
+        self.blender = None
+        self.blended_scores = None  # Cross val scores of the blended on the validation set
+        self.blended_score = None  # Mean of blended_scores
 
         self.test_batch: int = 0
         self.previous_test: pd.DataFrame = None
@@ -75,8 +81,9 @@ class RiiidModel:
             ColumnsSelector(),
 
             QuestionsFeaturer(self.questions),
-            UserAnswersEncoder(cv=cv, decay=0.99, smoothing_min=4, smoothing_value=1),
             AnswersEncoder(**self.params['answer_encoder']),
+            IncorrectAnswersEncoder(cv),
+            UserAnswersFrequencyEncoder(decay=0.99, smoothing_min=4, smoothing_value=1),
 
             QuestionsEmbedder(self.questions, **self.params['question_embedding']),
             AnswersCorrectnessEmbedder(**self.params['answers_embedding']),
@@ -132,8 +139,9 @@ class RiiidModel:
             DensityTransformer(['user_id_question_category_count', 'user_id_question_part_count', 'user_id_question_tag_count', 'user_id_content_id_count']),
 
             ColumnsSelector(columns_to_drop=[
-                'user_id', 'content_id', 'user_answer', 'bundle_id', 'correct_answer',
-                'answered_correctly', 'question_tags', 'answer_weight', 'lecture_id', 'lecture_tag', 'lecture_part',
+                'user_id', 'content_id', 'user_answer', 'bundle_id', 'correct_answer', 'answered_correctly',
+                'question_tags', 'answer_weight',
+                'lecture_id', 'lecture_tag', 'lecture_part', 'type_of'
                 'tasks_bucket_3', 'tasks_bucket_12'
             ], validate=True),
 
@@ -197,12 +205,12 @@ class RiiidModel:
         y = pd.concat(y)
         return X, y
 
-    def fit_model(self, X, y, X_val, y_val):
+    def fit_lgbm(self, X, y, X_val, y_val):
         logging.info('- Fit lightgbm model')
 
         train_set = lgb.Dataset(X, y)
         val_set = lgb.Dataset(X_val, y_val)
-        self.model = lgb.train(
+        model = lgb.train(
             self.params['lgbm_params'],
             train_set,
             valid_sets=[val_set],
@@ -211,20 +219,70 @@ class RiiidModel:
             verbose_eval=-1,
             callbacks=[logging_callback()]
         )
-        self.best_score = self.model.best_score['valid_0']['auc']
-        self.best_iteration = self.model.best_iteration
-        logging.info('Best score = {:.2%}, in {} iterations'.format(self.best_score, self.best_iteration))
+        best_score = model.best_score['valid_0']['auc']
+        self.models.append({
+            'model': model,
+            'best_score': best_score,
+            'best_iteration': model.best_iteration
+        })
+        logging.info('Best score = {:.2%}, in {} iterations'.format(best_score, model.best_iteration))
 
+    # Deprecated
     def refit_model(self, X, y):
         logging.info('- Refit lightgbm model')
 
         train_set = lgb.Dataset(X, y)
-        self.model = lgb.train(
+        model = lgb.train(
             self.params['lgbm_params'],
             train_set,
             num_boost_round=self.best_iteration,
             verbose_eval=-1
         )
+
+    def fit_catboost(self, X, y, X_val, y_val):
+        logging.info('- Fit catboost model')
+        model = CatBoostClassifier(iterations=10000, eval_metric='AUC')
+        model.fit(X, y, eval_set=(X_val, y_val), early_stopping_rounds=50, verbose=100)
+
+        best_score = model.get_best_score()['validation']['AUC']
+        best_iteration = model.get_best_iteration()
+        self.models.append({
+            'model': model,
+            'best_score': best_score,
+            'best_iteration': best_iteration
+        })
+        logging.info('Best score = {:.2%}, in {} iterations'.format(best_score, best_iteration))
+
+    def fit_blender(self, X, y):
+        logging.info('- Fit blender')
+        self.blender = LogisticRegressionCV(cv=5)
+        X = self._predict_models(X)
+        self.blender.fit(X, y)
+        logging.info('Blending parameters: {}'.format(self.blender.coef_))
+
+        self.blended_scores = cross_val_score(LogisticRegressionCV(cv=5), X, y, scoring='roc_auc', cv=5)
+        self.mean_blended_score = np.mean(self.blended_scores)
+        logging.info('Blended score = {}'.format(self.mean_blended_score))
+
+    def _predict_models(self, X):
+        predictions = np.zeros((len(X), len(self.models)))
+        for i, model in enumerate(self.models):
+            predictions[:, i] = self._predict_model(i, X)
+        return predictions
+
+    def _predict_model(self, model_id, X):
+        model = self.models[model_id]['model']
+        if hasattr(model, 'predict_proba'):
+            return model.predict_proba(X)[:, 1]
+        else:
+            return model.predict(X)
+
+    def predict_blender(self, X):
+        if self.blender is None:
+            return self._predict_model(0, X)
+        models_predictions = self._predict_models(X)
+        y_hat = self.blender.predict_proba(models_predictions)[:, 1]
+        return y_hat
 
     def update(self, test):
         prior_user_answer = eval(test['prior_group_responses'].values[0])
@@ -258,7 +316,7 @@ class RiiidModel:
         if len(X) > 0:
             predictions = X[['row_id']].copy()
             X = self.pipeline.transform(X)
-            predictions['answered_correctly'] = self.model.predict(X)
+            predictions['answered_correctly'] = self.predict_blender(X)
         else:
             predictions = pd.DataFrame(columns=['row_id', 'answered_correctly'])
         self.test_batch += 1

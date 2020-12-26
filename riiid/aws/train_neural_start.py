@@ -11,10 +11,9 @@ if __name__ == '__main__':
         packages=[r'C:\Users\chass\app\aws-doppel'],
         python='3.7.6',
         n_instances=1,
-        min_memory=32,
+        min_memory=256,
         min_gpu=1,
-        key_path=r'C:\Users\chass\Desktop\aws\aws-keypair.pem',
         env_vars={'PYTHONHASHSEED': '1'})
     project.terminate()
-    project.start()
+    #project.start()
     # project.monitore()

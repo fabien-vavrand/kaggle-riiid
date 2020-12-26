@@ -89,11 +89,11 @@ def rolling_score(data, data_weights, rolling, weighted, decay, dtype):
     data = data[sort_ids, :]
     data_weights = data_weights[sort_ids]
 
-    results, keys, values, weights = sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype)
+    results, keys, values, weights, context = sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype)
 
     reverse_sort_ids = np.lexsort([sort_ids])
     results = results[reverse_sort_ids, :]
-    return results, keys, values, weights
+    return results, keys, values, weights, context
 
 
 @njit
@@ -112,6 +112,9 @@ def sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype):
     keys = []
     values = []
     weights = []
+    context = []  # contains the last values for each group. Required because of decay which can't be recomputed on rolling values
+    sum = 0
+    count = 0
 
     for r in range(rows):
         same_group = True
@@ -120,6 +123,9 @@ def sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype):
                 col_ids[c] = data[r, c]
                 same_group = False
         if not same_group:
+            # Only add context after compute on the first group
+            if len(keys) > 0:
+                context.append([sum, count])
             sum = 0
             count = 0
             roll = []
@@ -166,10 +172,8 @@ def sorted_rolling_score(data, data_weights, rolling, weighted, decay, dtype):
             else:
                 sum_pop += target
                 count_pop += 1
-    keys.append(col_ids.copy())
-    values.append(roll)
-    weights.append(roll_weights)
-    return results, keys, values, weights
+    context.append([sum, count])
+    return results, keys, values, weights, context
 
 
 def last_feature_value_time(X, time_feature, feature_name):
@@ -244,6 +248,7 @@ def _compute_user_answers_ratio(user_id, user_answer, correct_answer, answers_ra
     return results, users, contexts
 
 
+# deprecated
 @njit
 def order_answer_ratios(ratios):
     results = np.empty(ratios.shape)

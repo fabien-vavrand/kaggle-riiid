@@ -88,7 +88,7 @@ PARAMS = {
         'verbosity': -1
     },
     'mlp_params': {
-        'layers': [512, 512, 512, 512, 512, 256, 128, 16],
+        'layers': [1024, 1024, 1024, 1024, 512, 256, 128, 16],
         'dropout': 0.2,
         'epochs': 100,
         'batch_size': 256

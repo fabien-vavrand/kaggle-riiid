@@ -45,7 +45,7 @@ try:
     for data, name in [(X, 'X.pkl'), (y, 'y.pkl'), (train, 'train.pkl'), (valid, 'valid.pkl')]:
         bucket.save_pickle_multiparts(data, name)
 
-    model.fit_model(X[train], y[train], X[valid], y[valid])
+    model.fit_lgbm(X[train], y[train], X[valid], y[valid])
 
     logging.info('Saving model')
     bucket.save_multiparts(model.save_with_source(), model.get_name())
