@@ -1,7 +1,6 @@
 import tensorflow as tf
 
 
-#Noam Schedule
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
     def __init__(self, d_model, warmup_steps=4000):
@@ -24,42 +23,31 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         return config
 
 
-def bce(real,pred):
-    real = tf.cast(real,tf.float32)
+def bce(real, pred):
+    real = tf.cast(real, tf.float32)
     p1 = real * tf.math.log(pred)
     p2 = (1 - real) * tf.math.log(1 - pred)
     return -1.0 * (p1 + p2)
 
 
 def loss_function(real, pred):
-
-#     real = real[:,-1]
-#     pred = pred[:,-1,:]
-    pred = pred[:,:,-1]
+    pred = pred[:, :, -1]
     mask = tf.math.logical_not(tf.math.equal(real, 0))
     real = real - 1
-#     real = tf.expand_dims(real,axis=-1)
-#     pred = tf.expand_dims(pred,axis=-1)
-#     loss_ = loss_object(real, pred)
-    loss_ = bce(real,pred)
-    # print(loss_)
+    loss_ = bce(real, pred)
     mask = tf.cast(mask, dtype=loss_.dtype)
-#     print(loss_.shape)
     loss_ *= mask
-    return tf.reduce_sum(loss_)/tf.reduce_sum(mask)
+    return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
 
 
 def accuracy(real, pred):
-#     pred = tf.cast(pred,'int32')
-#     real = real[:,-1]
-#     pred = pred[:,-1,:]
     pred = pred[:, :, -1]
     mask = tf.math.logical_not(tf.math.equal(real, 0))
     real = real - 1
     pred = pred > 0.5
-    pred = tf.cast(pred,tf.int32)
+    pred = tf.cast(pred, tf.int32)
     accuracies = tf.equal(tf.cast(real,'int32'), pred)
     accuracies = tf.math.logical_and(mask, accuracies)
     accuracies = tf.cast(accuracies, dtype=tf.float32)
     mask = tf.cast(mask, dtype=tf.float32)
-    return tf.reduce_sum(accuracies)/tf.reduce_sum(mask)
+    return tf.reduce_sum(accuracies) / tf.reduce_sum(mask)

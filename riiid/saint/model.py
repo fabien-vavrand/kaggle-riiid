@@ -1,30 +1,15 @@
+import logging
 import datetime
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import OrdinalEncoder
 
-def classifyLagTime(lag_time_seconds):
-    return int(min(lag_time_seconds, 300))
-
-
-# train_set['lag_class'] = train_set.lag_time_seconds.apply(classifyLagTime)
-
-# qdf = pd.read_csv("../data/questions.csv",usecols=['question_id','part'])
-# train_set = train_set.merge(qdf,how="left",left_on="content_id",right_on="question_id")
-
-
-
-# train_set = train_set.drop(dev_set.index)
-
-# dev_set = pd.read_csv("./data/dev_sakt_top.csv",
-#                     usecols = data_types_dict.keys(),dtype=data_types_dict)
-# train_set = train_set[~train_set.row_id.isin(dev_set.row_id.values)]
-
-N_t = 100
-# step = 50
-N_questions = 13523
-
-
+from riiid.core.data import save_pkl, load_pkl
+from riiid.saint.layers import Saint
+from riiid.saint.utils import CustomSchedule, accuracy, loss_function
 
 
 
@@ -34,9 +19,23 @@ class SaintModel:
         self.questions = questions
         self.lectures = lectures
         self.length = length
-        self.pad_token = -1
+        self.pad_token = 0
+
+        self.num_layers = 4
+        self.d_model = 156
+        self.dff = 64
+        self.num_heads = 4  #8
+        self.dropout = 0.1
+        self.epochs = 40
+        self.batch_size = 128
+        self.warmup = 5000
+        self.use_tpu = False
+
         self.model_id: str = None
         self.metadata = {}
+
+        self.model = None
+        self.context = None
 
     def get_name(self, prefix=None):
         if prefix:
@@ -45,23 +44,36 @@ class SaintModel:
             return 'saint_{}.zip'.format(self.model_id)
 
     def fit(self, X):
+        logging.info('- Fit')
         self._init_fit(X)
 
-        X = X[X['content_type_id'] == 0]
+        X = X[X['content_type_id'] == 0].copy()
         X.replace([np.nan], 0, inplace=True)
-        X = pd.merge(X, self.questions, on='content_id', how='left')
+
+        # Rebase ids to reserve 0 for padding token
+        # part is already > 0
+        self.questions['question_id'] += 1
+        X['content_id'] += 1
+        X['answered_correctly'] += 1
+
+        X = pd.merge(X, self.questions, left_on='content_id', right_on='question_id', how='left')
 
         user_ids = X['user_id'].unique()
-        train_uids = user_ids[:-39000]
-        dev_uids = user_ids[-39000:]
+        test_size = int(0.1 * len(user_ids))
+        train_uids = user_ids[:-test_size]
+        test_uids = user_ids[-test_size:]
 
         train_set = X[X['user_id'].isin(train_uids)]
-        dev_set = X[X['user_id'].isin(dev_uids)]
+        test_set = X[X['user_id'].isin(test_uids)]
 
-        train_ftrs = self.create_features(train_set)
-        dev_ftrs = self.create_features(dev_set)
+        train_features = self.create_features(train_set)
+        test_features = self.create_features(test_set)
 
-        return self
+        train_ds = self.create_dataset(train_features)
+        test_ds = self.create_dataset(test_features)
+
+        self.context = self.create_user_data(X)
+        return train_ds, test_ds
 
     def _init_fit(self, X):
         self.model_id = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -69,70 +81,31 @@ class SaintModel:
         self.metadata['n_users'] = X['user_id'].nunique()
 
     def create_features(self, df):
-        features = ['content_id', 'answered_correctly', 'part', 'bundle_id']
-        n_f = len(features)
-        df = df[df.content_type_id == 0]
-        udf = df.groupby('user_id')
-        N_samples = df.user_id.nunique()
-        #     ftr_arr = np.zeros((N_samples,N_t,n_f))
-        ftrs = {}
-        for i, feature in enumerate(features):
-            cids = udf[feature].apply(lambda x: x.values)
-            ftrlst = []
+        logging.info('- Create features on {} rows'.format(len(df)))
+        features_names = ['content_id', 'part', 'answered_correctly']
+        df_by_user = df.groupby('user_id')
+        features = {}
+        for feature_name in features_names:
+            feature = df_by_user[feature_name].apply(lambda x: x.values)
+            feature_list = []
 
-            for j, cid in enumerate(cids.values):
-                n_int = len(cid)
-                if n_int < self.length:
-                    pad_width = self.length - n_int
-                    cid = np.pad(cid, (pad_width, 0), mode='constant', constant_values=self.pad_token)
-                elif n_int > self.length:
-                    mod = n_int % self.length
+            for values in feature.values:
+                length = len(values)
+                if length < self.length:
+                    pad_width = self.length - length
+                    values = np.pad(values, (pad_width, 0), mode='constant', constant_values=self.pad_token)
+                elif length > self.length:
+                    mod = length % self.length
                     if mod != 0:
-                        cid = np.pad(cid, (self.length - mod, 0), mode='constant', constant_values=self.pad_token)
-                cid = cid.reshape((-1, self.length))
-                ftrlst.append(cid)
-            #             ftr_arr[j,:,i] = cid
-            ftr_arr = np.concatenate(ftrlst)
-            ftrs[feature] = ftr_arr
-        #    ftrs['dec_in'] = ftrs['answered_correctly']
-        return ftrs
-
-    def create_features_strided(self, df, train=True, step=50):
-        features = ['content_id', 'answered_correctly', 'lag_class', 'elapsed_time', 'prior_question_had_explanation']
-        n_f = len(features)
-        df = df[df.content_type_id == 0]
-        udf = df.groupby('user_id')
-        N_samples = df.user_id.nunique()
-        #     ftr_arr = np.zeros((N_samples,N_t,n_f))
-        if not train:
-            step = self.length
-        ftrs = {}
-        for i, feature in enumerate(features):
-            cids = udf[feature].apply(lambda x: x.values)
-            ftrlst = []
-
-            for j, cid in enumerate(cids.values):
-                n_int = len(cid)
-                tmplst = []
-
-                for i in range(0, n_int, step):
-                    atmp = cid[i:i + self.length].reshape(1, -1)
-                    if atmp.shape[1] < self.length:
-                        atmp = np.pad(atmp, ((0, 0), (self.length - atmp.shape[1], 0)))
-                    tmplst.append(atmp)
-
-                cid = np.concatenate(tmplst)
-                ftrlst.append(cid)
-            #             ftr_arr[j,:,i] = cid
-            print(ftrlst[:2])
-
-            ftr_arr = np.concatenate(ftrlst)
-            ftrs[feature] = ftr_arr
-        ftrs['dec_in'] = ftrs['content_id'] + N_questions * ftrs['answered_correctly']
-        return ftrs
+                        values = np.pad(values, (self.length - mod, 0), mode='constant', constant_values=self.pad_token)
+                values = values.reshape((-1, self.length))
+                feature_list.append(values)
+            feature_array = np.concatenate(feature_list)
+            features[feature_name] = feature_array
+        return features
 
     def create_user_data(self, df):
-        df = df[df.content_type_id == 0]
+        # df = df[df.content_type_id == 0]
         df = df[['content_id', 'user_id', 'answered_correctly', 'part']]
         udf = df.groupby('user_id').tail(self.length)
         udf = udf.groupby('user_id')
@@ -150,12 +123,80 @@ class SaintModel:
                 for i in range(3):
                     ud[i] = np.pad(ud[i], (diff, 0), mode='constant', constant_values=self.pad_token)
             udata[uid] = ud
+
+        for k, v in udata.items():
+            udata[k] = [x + 1 for x in v]
         return udata
 
+    def create_dataset(self, features):
+        logging.info('- Create dataset')
+        X = (
+            (
+                 features['content_id'][:, 1:].astype('int32'),
+                 features['part'][:, 1:].astype('int32')
+            ),
+            features['answered_correctly'][:, :-1].astype('int32')
+        )
+        y = features['answered_correctly'][:, 1:].astype('int32')
+        size = len(y)
+
+        X = tf.data.Dataset.from_tensor_slices(X)
+        y = tf.data.Dataset.from_tensor_slices(y)
+        dataset = tf.data.Dataset.zip((X, y)).shuffle(size).batch(self.batch_size)
+        return dataset
+
+    def create_model(self):
+        self.model = Saint(
+            num_layers=self.num_layers,
+            d_model=self.d_model,
+            num_heads=self.num_heads,
+            dff=self.dff,
+            n_contents=len(self.questions['question_id'].unique()) + 1,  # +1 for padding token
+            n_parts=len(self.questions['part'].unique()) + 1,  # +1 for padding token
+            n_answers=3,
+            pe_input=self.length-1,
+            pe_target=self.length-1,
+            rate=self.dropout
+        )
+        lr = CustomSchedule(self.d_model, warmup_steps=self.warmup)
+        opt = tf.keras.optimizers.Adam(learning_rate=lr, epsilon=1e-8)
+        self.model.compile(loss=loss_function, optimizer=opt)  # metrics=[accuracy]
+
+    def train(self, train_ds, test_ds):
+        logging.info('- Train')
+        if self.use_tpu:
+            tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
+            tf.config.experimental_connect_to_cluster(tpu)
+            tf.tpu.experimental.initialize_tpu_system(tpu)
+            tpu_strategy = tf.distribute.experimental.TPUStrategy(tpu)
+            with tpu_strategy.scope():
+                self.create_model()
+        else:
+            self.create_model()
+
+        self.history = self.model.fit(train_ds, validation_data=test_ds, epochs=self.epochs)
+
+    def score(self, y_true, test_ds):
+        val_preds = self.model.predict(test_ds, verbose=1)
+        y_pred = val_preds[:, -1, -1]
+        # y_true = Y_dev[:, -1] - 1
+        # val_auc = roc_auc_score(y_true, y_pred)
+
     def predict(self, X):
-        return 0
+        raise NotImplementedError()
 
-    def update(self, X):
-        return self
+    def save(self, path=None):
+        #self.model.save('gs://riiid_models/{}'.format(self.get_name()))
+        self.model = None
+        self.history = None
+        save_pkl(self, path)
 
-
+    @staticmethod
+    def load(path):
+        model = load_pkl(path)
+        model.model = tf.keras.models.load_model(path, custom_objects={
+            'accuracy': accuracy,
+            'CustomSchedule': CustomSchedule,
+            'loss_function': loss_function
+        })
+        return model

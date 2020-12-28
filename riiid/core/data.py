@@ -64,7 +64,7 @@ class DataLoader:
     def load_tests_examples(self):
         return load_pkl(os.path.join(self.path, 'tests_examples.pkl'))
 
-    def _load(self):
+    def _load(self, nrows=None):
         train_types = {
             #'row_id': 'int64',
             'timestamp': 'int64',
@@ -91,13 +91,16 @@ class DataLoader:
              'type_of': 'object'
         }
 
-        train = self._read_csv('train.csv', train_types)
+        train = self._read_csv('train.csv', train_types, nrows)
         questions = self._read_csv('questions.csv', questions_types)
         lectures = self._read_csv('lectures.csv', lectures_types)
         return train, questions, lectures
 
-    def _read_csv(self, filename, filetypes):
-        return pd.read_csv(os.path.join(self.path, filename), usecols=filetypes.keys(), dtype=filetypes, low_memory=False)
+    def _read_csv(self, filename, filetypes, nrows=None):
+        return pd.read_csv(os.path.join(self.path, filename), usecols=filetypes.keys(), dtype=filetypes, nrows=nrows, low_memory=False)
+
+    def load_first_rows(self, nrows):
+        return self._load(nrows)
 
 
 def preprocess_questions(questions):
@@ -115,6 +118,13 @@ def preprocess_questions(questions):
             x = x.split(' ')
             return int(x[0])
 
+    def get_last_tag(x):
+        if pd.isnull(x):
+            return 0
+        else:
+            x = x.split(' ')
+            return int(x[-1])
+
     def get_two_tags(x):
         if pd.isnull(x):
             return []
@@ -122,9 +132,18 @@ def preprocess_questions(questions):
             x = x.split(' ')
             return x[:2]
 
-    questions['n_tags'] = questions['tags'].apply(count_tags).astype(np.int8)
+    #questions['n_tags'] = questions['tags'].apply(count_tags).astype(np.int8)
     questions['question_tag'] = questions['tags'].apply(get_first_tag)
     questions['question_tag'] = downcast_int(questions['question_tag'])
+
+    questions['question_last_tag'] = questions['tags'].apply(get_last_tag)
+    questions['question_last_tag'] = downcast_int(questions['question_last_tag'])
+
+    questions['question_two_tags'] = questions['tags'].apply(get_two_tags)
+    questions['question_two_tags'] = questions['question_two_tags'].apply(lambda x: ' '.join(x))
+    questions['question_two_tags'] = OrdinalEncoder().fit_transform(questions[['question_two_tags']])
+    questions['question_two_tags'] = downcast_int(questions['question_two_tags'])
+
     questions['tags'] = questions['tags'].fillna('')
     questions['tags'] = OrdinalEncoder().fit_transform(questions[['tags']])
     questions['tags'] = downcast_int(questions['tags'])
