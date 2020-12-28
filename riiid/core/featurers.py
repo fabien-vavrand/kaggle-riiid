@@ -403,6 +403,9 @@ class QuestionsFeaturer:
         weight = (1 / (1 + np.exp(-(self.questions['n_questions'] - 5) / 1))) * (self.questions['n_questions'] > 0)
         self.questions['mean_content_time'] = weight * self.questions['mean_content_time'] + (1 - weight) * self.content_time
         self.questions = self.questions.drop(columns=['n_questions'])
+
+        # Keep list of users for whom the first question was 7900
+        self.users_7900 = set(X[(X['task_container_id'] == 0) & (X['content_id'] == 7900)]['user_id'].unique())
         return self
 
     def transform(self, X):
@@ -431,6 +434,8 @@ class QuestionsFeaturer:
         #X['prior_question_tag'] = X.groupby('user_id')['question_tag'].shift()
         #X['prior_question_tag'] = X['prior_question_tag'].fillna(-1).astype(np.int16)
 
+        X['user_7900'] = (X['user_id'].isin(self.users_7900) * 1).astype(np.int8)
+
         return X
 
     @staticmethod
@@ -454,10 +459,17 @@ class QuestionsFeaturer:
                 results[r] = lectures_tags[r, mapping[tags[r]]]
         return results
 
-    def update(self, X, y):
-        pass
+    def update(self, X, y=None):
+        user_id = X['user_id'].values
+        content_id = X['content_id'].values
+        task_container_id = X['task_container_id'].values
+
+        for r in range(len(user_id)):
+            if task_container_id[r] == 0 and content_id[r] == 7900:
+                self.users_7900.add(user_id[r])
 
     def update_transform(self, X, y=None):
+        self.update(X, y)
         X = pre_filtered_indexed_merge(X, self.questions, left_on='content_id')
         return X
 

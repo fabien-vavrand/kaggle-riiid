@@ -21,9 +21,10 @@ import tensorflow.keras.backend as K
 
 class ScalingTransformer:
 
-    def __init__(self, min_unique_values=5, skewness_threshold=1):
+    def __init__(self, min_unique_values=5, skewness_threshold=1, max_rows=5_000_000):
         self.min_unique_values = min_unique_values
         self.skewness_threshold = skewness_threshold
+        self.max_rows = max_rows
         self.rows = None
         self.columns = None
         self.standard_features = None
@@ -54,6 +55,9 @@ class ScalingTransformer:
         self.skewed_features = np.array(self.skewed_features)
         logging.info('{} standard features'.format(len(self.standard_features)))
         logging.info('{} skewed features'.format(len(self.skewed_features)))
+
+        if self.rows > self.max_rows:
+            X = X.sample(n=self.max_rows)
 
         self.standard_scaler.fit(X[:, self.standard_features])
         self.power_scaler.fit(X[:, self.skewed_features])

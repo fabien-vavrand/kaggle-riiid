@@ -9,51 +9,37 @@ from riiid.config import PATH, INPUT_PATH, MODELS_PATH, PARAMS
 
 
 """
+TO TEST:
+- in sorted_rolling_score, sum and count should not be decremented when rolling in the middle of a task
+
 TODO: 
-- TO TEST: in sorted_rolling_score, sum and count should not be decremented when rolling in the middle of a task
 - update answers count in AnswersEncoder
 - sum of prior_question_lost_time sur la session
 - average et sum content_time par user, par session
-- content time is null for first question of session: fill intelligently ? (mean, mean of previous session, ...)
 - prior_question_time: check if it is better to compute it for the first question of a session or not ? (group by session_id in tasks)
 - sum questions explanation time during session
 - start session with lecture / session lecture time/learning time (time question lost)
-- user_score / content_id
 - retester n_lectures_on_tag, maybe I had a bug previosuly
-- change the smoothing of user_id_content_id_score
 - user score by day (even if not easy to compute at prediction time)
 - ratio question_part, question_tag / category per user (user had 45% of this question part... etc)
-- user % of different user_answer (% of answer 1, % of 2, ...)
 - apply a decay factor to lectures (n_lectures)
-- keep ids in features (content_id, etc...)
-- sum of user_id / content_id answered_correctly
 - precompute dictionnary of weights to speed inference
-- maybe I could do better with content_time (not break by session, ...)
-- previous task_size
 - try DBSCAN instead of k-means
-- previous lecture_time
 - time since last session
-- essayer de smoother davantage les content_id encoder pour limiter l'usage du content_id_ratio, qui doit compenser ca jimagine...
 - changer save with source pour save directement model/context.txt et model/model.pkl au lieu du zip
-- feature decaying
-- last score for user_id / content_id
-- user_id_session_density
-- nombre de réponse possible par question
 - raffiner les buckets des tasks_bucket_12
-- les premières questions sont toujours les mêmes!
-- encoder par previous_question_tag / previous_answered_correctly / contetn_id
-- last lecture type
-- % of tags in common with previous question
-- investigate none in answer_0_ratio
-- compute content_id_encoded after removing duplicates
+- les premières questions sont souvent les mêmes!
+- encoder par previous_question_tag / previous_answered_correctly / content_id
 - user_id content_id had explanations count
 
 FEATURES TO TRY
-- prior content_id answered_correctly
 - time since first content_id
 - number of questions during last day / week / month
 - time between n-1 and n-2 content_id
 - % of tags in common with previous questions
+- count lectures by tag (removed it because it was too weak but now...)
+- Mean and std of content_id_encoded by part
+- lecture_tag_content_id_encoded
 
 TRAIN 10000 users
 - Best score = 78.85%, in 305 iterations
@@ -66,13 +52,17 @@ TRAIN 10000 users
 
 TRAIN 30000 users
 - Best score = 79.50%, in 650 iterations
+- Best score = 79.59%, in 742 iterations
+- Best score = 79.60%, in 930 iterations
+- Best score = 79.62%, in 855 iterations
+- Best score = 79.64%, in 970 iterations (add prior_question_had_explanation_content_id_encoded)
 """
 
 
 configure_console_logging()
 
 loader = DataLoader(INPUT_PATH)
-train, questions, lectures = loader.load_first_users(10000)
+train, questions, lectures = loader.load_first_users(30000)
 questions = preprocess_questions(questions)
 lectures = preprocess_lectures(lectures)
 
