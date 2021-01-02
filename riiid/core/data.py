@@ -53,7 +53,10 @@ class DataLoader:
             train, questions, lectures = load_pkl(cache_path)
         else:
             train, questions, lectures = self.load()
-            users = train['user_id'].unique()[:n]
+            if n > 0:
+                users = train['user_id'].unique()[:n]
+            else:
+                users = train['user_id'].unique()[n:]
             train = train[train['user_id'].isin(users)].reset_index(drop=True)
             save_pkl((train, questions, lectures), cache_path)
         return train, questions, lectures

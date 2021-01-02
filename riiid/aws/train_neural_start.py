@@ -15,5 +15,5 @@ if __name__ == '__main__':
         min_gpu=1,
         env_vars={'PYTHONHASHSEED': '1'})
     project.terminate()
-    #project.start()
+    project.start()
     # project.monitore()

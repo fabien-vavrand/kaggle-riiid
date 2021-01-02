@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import tensorflow as tf
 
@@ -223,26 +224,46 @@ class DecoderLayer(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
 
-    def __init__(self, num_layers, d_model, num_heads, dff, n_contents, n_parts, maximum_position_encoding, rate=0.1):
+    def __init__(
+        self, num_layers, d_model, num_heads, dff,
+        n_contents, n_parts, n_tags, n_times, n_tasks, maximum_position_encoding,
+        rate=0.1
+    ):
         super(Encoder, self).__init__()
 
         self.d_model = d_model
         self.num_layers = num_layers
-        self.part_embedding_size = 3
 
-        self.embedding = tf.keras.layers.Embedding(n_contents, d_model - self.part_embedding_size)
+        self.part_embedding_size = 4
+        self.tag_embedding_size = 32
+        self.time_embedding_size = 8
+        self.task_embedding_size = 8
+        self.content_embedding_size = self.d_model - self.part_embedding_size - self.tag_embedding_size - self.time_embedding_size - self.task_embedding_size - 1  # -1 for content_id_encoded
+        logging.info('content embedding size = {}'.format(self.content_embedding_size))
+
+        self.content_embedding = tf.keras.layers.Embedding(n_contents, self.content_embedding_size)
         self.part_embedding = tf.keras.layers.Embedding(n_parts, self.part_embedding_size)
+        self.tag_embedding = tf.keras.layers.Embedding(n_tags, self.tag_embedding_size)
+        self.time_embedding = tf.keras.layers.Embedding(n_times, self.time_embedding_size)
+        self.task_embedding = tf.keras.layers.Embedding(n_tasks, self.task_embedding_size)
         self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
 
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, training=None, mask=None):
-        x_cid, x_part = x
+        x_content_id, x_part, x_tag, x_content_time, x_task, x_content_encoded = x
 
         # adding embedding and position encoding.
         x = tf.concat(
-            (self.embedding(x_cid),  self.part_embedding(x_part)), axis=-1, name='concat'
+            (
+                self.content_embedding(x_content_id),
+                self.part_embedding(x_part),
+                self.tag_embedding(x_tag),
+                self.time_embedding(x_content_time),
+                self.task_embedding(x_task),
+                tf.expand_dims(x_content_encoded, axis=-1)
+            ), axis=-1, name='concat_encoder'
         )  # (batch_size, input_seq_len, d_model)
         x = tf.cast(x, tf.float32)
 
@@ -258,22 +279,42 @@ class Encoder(tf.keras.layers.Layer):
 
 class Decoder(tf.keras.layers.Layer):
 
-    def __init__(self, num_layers, d_model, num_heads, dff, n_answers, maximum_position_encoding, rate):
+    def __init__(
+        self,
+        num_layers, d_model, num_heads, dff,
+        n_answered_contents, n_answers, n_times, maximum_position_encoding,
+        rate=0.1
+    ):
         super(Decoder, self).__init__()
 
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Embedding(n_answers, d_model)
+        self.answer_embedding_size = 3
+        self.time_embedding_size = 8
+        self.answered_content_embedding_size = self.d_model - self.answer_embedding_size - self.time_embedding_size
+        logging.info('answered content embedding size = {}'.format(self.answered_content_embedding_size))
+
+        self.answered_content_embedding = tf.keras.layers.Embedding(n_answered_contents, self.answered_content_embedding_size)
+        self.answer_embedding = tf.keras.layers.Embedding(n_answers, self.answer_embedding_size)
+        self.time_embedding = tf.keras.layers.Embedding(n_times, self.time_embedding_size)
         self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
 
         self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
-        seq_len = tf.shape(x)[1]
+        x_answered_content, x_answer, x_content_time = x
+        seq_len = tf.shape(x_answered_content)[1]
 
-        x = self.embedding(x)  # (batch_size, target_seq_len, d_model)
+        # adding embedding and position encoding.
+        x = tf.concat(
+            (
+                self.answered_content_embedding(x_answered_content),
+                self.answer_embedding(x_answer),
+                self.time_embedding(x_content_time)
+            ), axis=-1, name='concat_decoder'
+        )  # (batch_size, target_seq_len, d_model)
         x = tf.cast(x, tf.float32)
 
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
@@ -289,19 +330,38 @@ class Decoder(tf.keras.layers.Layer):
 class Saint(tf.keras.Model):
 
     def __init__(self, num_layers, d_model, num_heads, dff,
-                 n_contents, n_parts, n_answers,
+                 n_contents, n_parts, n_tags, n_times, n_tasks,
+                 n_answered_contents, n_answers,
                  pe_input, pe_target, rate, **kwargs):
         super(Saint, self).__init__(**kwargs)
 
-        self.encoder = Encoder(num_layers, d_model, num_heads, dff, n_contents, n_parts, pe_input, rate)
-        self.decoder = Decoder(num_layers, d_model, num_heads, dff, n_answers, pe_target, rate)
-        self.final_layer = tf.keras.layers.Dense(3, activation="softmax")
+        self.encoder = Encoder(
+            num_layers, d_model, num_heads, dff,
+            n_contents=n_contents,
+            n_parts=n_parts,
+            n_tags=n_tags,
+            n_times=n_times,
+            n_tasks=n_tasks,
+            maximum_position_encoding=pe_input,
+            rate=rate
+        )
+        self.decoder = Decoder(
+            num_layers, d_model, num_heads, dff,
+            n_answered_contents=n_answered_contents,
+            n_answers=n_answers,
+            n_times=n_times,
+            maximum_position_encoding=pe_target,
+            rate=rate
+        )
+        self.final_layer = tf.keras.layers.Dense(n_answers, activation="softmax")
 
     def call(self, inputs, training):
-        inp, tar_inp = inputs
-        cid_inp, part_inp = inp
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(cid_inp, tar_inp)
-        enc_output = self.encoder(inp, training=training, mask=enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
-        dec_output = self.decoder(tar_inp, enc_output, training, look_ahead_mask=combined_mask, padding_mask=dec_padding_mask)
-        final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
+        encoder_input, decoder_input = inputs
+        enc_inp, *_ = encoder_input
+        dec_inp, *_ = decoder_input
+
+        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(enc_inp, dec_inp)
+        encoder_output = self.encoder(encoder_input, training=training, mask=enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
+        decoder_output = self.decoder(decoder_input, encoder_output, training=training, look_ahead_mask=combined_mask, padding_mask=dec_padding_mask)
+        final_output = self.final_layer(decoder_output)  # (batch_size, tar_seq_len, target_vocab_size)
         return final_output
