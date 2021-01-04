@@ -111,6 +111,36 @@ def preprocess_questions(questions):
     questions['question_tags'] = OrdinalEncoder().fit_transform(questions[['tags']])
     questions['question_tags'] = downcast_int(questions['question_tags'])
     questions['question_tag'] = questions['tags'].apply(lambda x: int(x.split(' ')[0]))
+    def compute_communities(x):
+        import networkx as nx
+        import community as community_louvain
+
+        questions = x['question_id'].values
+        tags_split = x['tags'].apply(lambda x: [int(num) for num in str(x).split() if num != 'nan'])
+        adjacency_matrix = np.zeros((questions.shape[0], questions.shape[0]))
+        tag_questions = {}
+
+        for tags, question in zip(tags_split, questions):
+            for tag in tags:
+                if tag in tag_questions:
+                    tag_questions[tag].append(question)
+                else:
+                    tag_questions[tag] = [question]
+
+        for questions in tag_questions.values():
+            n = len(questions)
+            for i in range(n):
+                for j in range(n):
+                    if i == j:
+                        continue
+                    adjacency_matrix[questions[i], questions[j]] += 1
+        G = nx.from_numpy_matrix(adjacency_matrix)
+        partitions = community_louvain.best_partition(G, random_state=42)
+        df_partitions = pd.Series(partitions).rename('question_community')
+        x = x.merge(df_partitions, how='left', left_on='question_id', right_index=True)
+        return x
+
+    questions = compute_communities(questions)
     questions['question_tag'] = downcast_int(questions['question_tag'])
 
     questions.rename(columns={'question_id': 'content_id', 'part': 'question_part', 'tags_id': 'question_tags'}, inplace=True)

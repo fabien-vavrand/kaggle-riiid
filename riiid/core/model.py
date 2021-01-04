@@ -95,10 +95,12 @@ class RiiidModel:
             RatioEncoder('question_tag'),
             RatioEncoder('question_tags'),
             RatioEncoder('content_id'),
+            RatioEncoder('question_community'),
 
             ScoreEncoder('question_part'),
             ScoreEncoder('question_category'),
             ScoreEncoder('question_tag'),
+            ScoreEncoder('question_community'),
             ScoreEncoder('content_id', cv=cv, updatable=True, transformable=True, **self.params['score_encoder']),
             ScoreEncoder('lecture_id', cv=cv, updatable=True, transformable=False, **self.params['score_encoder']),
             ScoreEncoder(['user_7900', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
@@ -113,6 +115,7 @@ class RiiidModel:
             RollingScoreEncoder(['user_id', 'question_part'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_category'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_tag'], count=True, time_since_last=True, **self.params['user_score_encoder']),
+            RollingScoreEncoder(['user_id', 'question_community'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             #RollingScoreEncoder(['user_id', 'question_last_tag'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             #RollingScoreEncoder(['user_id', 'question_two_tags'], count=True, time_since_last=True, **self.params['user_score_encoder']),
 
@@ -123,31 +126,35 @@ class RiiidModel:
             RollingScoreEncoder(['user_id', 'question_part'], **self.params['user_rolling_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_category'], **self.params['user_rolling_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_tag'], **self.params['user_rolling_score_encoder']),
-
+            RollingScoreEncoder(['user_id', 'question_community'], **self.params['user_rolling_score_encoder']),
+                
             RollingScoreEncoder(['user_id'], weighted=True, **self.params['user_weighted_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_part'], weighted=True, **self.params['user_weighted_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_category'], weighted=True, **self.params['user_weighted_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_tag'], weighted=True, **self.params['user_weighted_score_encoder']),
+            RollingScoreEncoder(['user_id', 'question_community'], weighted=True, **self.params['user_weighted_score_encoder']),
 
             RollingScoreEncoder(['user_id'], decay=0.99, smoothing_min=10, smoothing_value=2),
             RollingScoreEncoder(['user_id', 'question_part'], decay=0.99, smoothing_min=10, smoothing_value=2),
+            RollingScoreEncoder(['user_id', 'question_community'], decay=0.99, smoothing_min=10, smoothing_value=2),
 
             RollingScoreEncoder(['user_id'], decay=0.9, smoothing_min=1, smoothing_value=1),
             RollingScoreEncoder(['user_id', 'question_part'], decay=0.9, smoothing_min=1, smoothing_value=1),
             RollingScoreEncoder(['user_id', 'question_category'], decay=0.9, smoothing_min=1, smoothing_value=1),
             RollingScoreEncoder(['user_id', 'question_tag'], decay=0.9, smoothing_min=1, smoothing_value=1),
+            RollingScoreEncoder(['user_id', 'question_community'], decay=0.9, smoothing_min=1, smoothing_value=1),
 
             RollingScoreEncoder(['user_id'], weighted=True, decay=0.98, smoothing_min=4, smoothing_value=1),
 
             LaggingFeaturer(['content_id_encoded', 'mean_content_time', 'prior_question_time', 'prior_question_elapsed_time', 'prior_answer_ratio'], lag=3),
 
-            DensityTransformer(['user_id_question_category_count', 'user_id_question_part_count', 'user_id_question_tag_count', 'user_id_content_id_count']),
+            DensityTransformer(['user_id_question_category_count', 'user_id_question_part_count', 'user_id_question_tag_count', 'user_id_content_id_count', 'user_id_question_community_count']),
 
             ColumnsSelector(columns_to_drop=[
                 'user_id', 'content_id', 'user_answer', 'bundle_id', 'correct_answer', 'answered_correctly',
                 'question_tags', 'answer_weight',
                 'lecture_id', 'lecture_tag', 'lecture_part', 'type_of',
-                'tasks_bucket_3', 'tasks_bucket_12'
+                'tasks_bucket_3', 'tasks_bucket_12', 'question_community'
             ], validate=True),
 
             TypesTransformer(float_dtype=FLOAT_DTYPE),
