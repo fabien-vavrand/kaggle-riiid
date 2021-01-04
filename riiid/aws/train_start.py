@@ -13,7 +13,7 @@ if __name__ == '__main__':
     project = DoppelProject(
         name='riiid-train',
         path=r'C:\Users\chass\Kaggle\riiid\kaggle-riiid',
-        entry_point='-m riiid.aws.train_neural',
+        entry_point='-m riiid.aws.train',
         packages=[r'C:\Users\chass\app\aws-doppel'],
         python='3.7.6',
         n_instances=1,

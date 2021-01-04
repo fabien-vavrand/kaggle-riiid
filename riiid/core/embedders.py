@@ -101,7 +101,8 @@ class QuestionsEmbedder(TransformerMixin):
 
 class AnswersCorrectnessEmbedder:
 
-    def __init__(self, n_fold=5, embedding_size=20, window=3, min_count=5, sg=0, iter=15, workers=1):
+    def __init__(self, tags_factory, n_fold=5, embedding_size=20, window=3, min_count=5, sg=0, iter=15, workers=1):
+        self.tags_factory = tags_factory
         self.n_fold = n_fold
         self.size = embedding_size
         self.window = window
@@ -111,7 +112,7 @@ class AnswersCorrectnessEmbedder:
         self.workers = workers
 
         self.model = None
-        self.lags = [1, 2]
+        self.lags = [1, 2, 3]
         self.context = {}
 
     def fit(self, X, y=None):
@@ -124,6 +125,8 @@ class AnswersCorrectnessEmbedder:
         user_id = X['user_id'].values
         content_id = X['content_id'].values
         similarities = np.full((len(user_id), len(self.lags)), np.nan, dtype=FLOAT_DTYPE)
+        tag_similarities = np.full((len(user_id), len(self.lags)), np.nan, dtype=FLOAT_DTYPE)
+        answered_tag_similarities = np.full((len(user_id), len(self.lags)), np.nan, dtype=FLOAT_DTYPE)
         for r in range(len(user_id)):
             try:
                 context = self.context[user_id[r]]
@@ -132,6 +135,10 @@ class AnswersCorrectnessEmbedder:
                         sim_correct = self._get_similarity(self.model, context[-lag][0], content_id[r], context[-lag][1], 1)
                         sim_incorrect = self._get_similarity(self.model, context[-lag][0], content_id[r], context[-lag][1], 0)
                         similarities[r, lag - 1] = sim_correct - sim_incorrect
+
+                        tags_similarity = self.tags_factory.similarity(context[-lag][0], content_id[r])
+                        tag_similarities[r, lag - 1] = tags_similarity
+                        answered_tag_similarities[r, lag - 1] = tags_similarity * (1 if context[-lag][1] == 1 else -1)
                     except:
                         pass
             except KeyError:
@@ -139,6 +146,8 @@ class AnswersCorrectnessEmbedder:
 
         for lag in self.lags:
             X[f'similarity_{lag}'] = similarities[:, lag - 1]
+            X[f'tags_similarity_{lag}'] = tag_similarities[:, lag - 1]
+            X[f'tags_answered_similarity_{lag}'] = answered_tag_similarities[:, lag - 1]
 
         return X
 
@@ -178,8 +187,8 @@ class AnswersCorrectnessEmbedder:
         return model
 
     def _transform(self, X, model, fold=None):
-        cache_id = 'answers_embedder_transformed_{}_{}_{}_{}_{}_{}_{}'.format(
-            self.n_fold, self.size, self.window, self.min_count, self.sg, self.iter, len(X)
+        cache_id = 'tags_answers_embedder_transformed_{}_{}_{}_{}_{}_{}_{}_{}'.format(
+            self.n_fold, self.size, self.window, self.min_count, self.sg, self.iter, len(self.lags), len(X)
         )
 
         if fold is not None:
@@ -200,6 +209,8 @@ class AnswersCorrectnessEmbedder:
         task_container_id = X['task_container_id'].values
         answered_correctly = X['answered_correctly'].values
         similarities = np.full(len(user_id), np.nan, dtype=FLOAT_DTYPE)
+        similar_tags = np.full(len(user_id), np.nan, dtype=FLOAT_DTYPE)
+        similar_answered_tags = np.full(len(user_id), np.nan, dtype=FLOAT_DTYPE)
         current_user_id = -1
         for r in range(len(user_id)):
             if current_user_id != user_id[r]:
@@ -220,10 +231,17 @@ class AnswersCorrectnessEmbedder:
                 sim_incorrect = self._get_similarity(model, user_content_id[-lag], content_id[r], user_answered_correctly[-lag], 0)
                 similarities[r] = sim_correct - sim_incorrect
 
+                tags_similarity = self.tags_factory.similarity(user_content_id[-lag], content_id[r])
+                similar_tags[r] = tags_similarity
+                similar_answered_tags[r] = tags_similarity * (1 if user_answered_correctly[-lag] == 1 else -1)
+
             user_task_content_id.append(content_id[r])
             user_task_answered_correctly.append(answered_correctly[r])
 
-        results = pd.DataFrame({f'similarity_{lag}': similarities}, dtype=FLOAT_DTYPE)
+        results = pd.DataFrame({f'similarity_{lag}': similarities,
+                                f'tags_similarity_{lag}': similar_tags,
+                                f'tags_answered_similarity_{lag}': similar_answered_tags
+                                }, dtype=FLOAT_DTYPE)
         return results
 
     def _get_similarity(self, model, previous_content, content, previous_answered_correctly, answered_correctly):

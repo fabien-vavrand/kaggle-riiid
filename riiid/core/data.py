@@ -107,50 +107,13 @@ class DataLoader:
 
 
 def preprocess_questions(questions):
-    def count_tags(x):
-        if pd.isnull(x):
-            return 0
-        else:
-            x = x.split(' ')
-            return len(x)
-
-    def get_first_tag(x):
-        if pd.isnull(x):
-            return 0
-        else:
-            x = x.split(' ')
-            return int(x[0])
-
-    def get_last_tag(x):
-        if pd.isnull(x):
-            return 0
-        else:
-            x = x.split(' ')
-            return int(x[-1])
-
-    def get_two_tags(x):
-        if pd.isnull(x):
-            return []
-        else:
-            x = x.split(' ')
-            return x[:2]
-
-    #questions['n_tags'] = questions['tags'].apply(count_tags).astype(np.int8)
-    questions['question_tag'] = questions['tags'].apply(get_first_tag)
+    questions['tags'] = questions['tags'].fillna('0')
+    questions['question_tags'] = OrdinalEncoder().fit_transform(questions[['tags']])
+    questions['question_tags'] = downcast_int(questions['question_tags'])
+    questions['question_tag'] = questions['tags'].apply(lambda x: int(x.split(' ')[0]))
     questions['question_tag'] = downcast_int(questions['question_tag'])
 
-    questions['question_last_tag'] = questions['tags'].apply(get_last_tag)
-    questions['question_last_tag'] = downcast_int(questions['question_last_tag'])
-
-    questions['question_two_tags'] = questions['tags'].apply(get_two_tags)
-    questions['question_two_tags'] = questions['question_two_tags'].apply(lambda x: ' '.join(x))
-    questions['question_two_tags'] = OrdinalEncoder().fit_transform(questions[['question_two_tags']])
-    questions['question_two_tags'] = downcast_int(questions['question_two_tags'])
-
-    questions['tags'] = questions['tags'].fillna('')
-    questions['tags'] = OrdinalEncoder().fit_transform(questions[['tags']])
-    questions['tags'] = downcast_int(questions['tags'])
-    questions.rename(columns={'question_id': 'content_id', 'part': 'question_part', 'tags': 'question_tags'}, inplace=True)
+    questions.rename(columns={'question_id': 'content_id', 'part': 'question_part', 'tags_id': 'question_tags'}, inplace=True)
     return questions
 
 
@@ -164,3 +127,21 @@ def preprocess_lectures(lectures):
     })
     lectures['type_of'] = downcast_int(lectures['type_of'])
     return lectures
+
+
+class TagsFactory:
+
+    def __init__(self, questions):
+        questions = questions.copy()
+        questions['tags'] = questions['tags'].apply(lambda x: set(x.split(' ')))
+        tags = questions[['question_tags', 'tags']].drop_duplicates('question_tags')
+        x_tags = pd.merge(tags.assign(key=0), tags.assign(key=0), on='key').drop(columns='key')
+        x_tags['common'] = x_tags.apply(lambda r: len(r['tags_x'].intersection(r['tags_y'])) / len(r['tags_x'].union(r['tags_y'])), axis=1)
+
+        self.questions_to_tags = questions.set_index('content_id')['question_tags'].to_dict()
+        self.tags_similarity = x_tags.set_index(['question_tags_x', 'question_tags_y'])['common'].to_dict()
+
+    def similarity(self, content_id_1, content_id_2):
+        tag_1 = self.questions_to_tags[content_id_1]
+        tag_2 = self.questions_to_tags[content_id_2]
+        return self.tags_similarity[(tag_1, tag_2)]

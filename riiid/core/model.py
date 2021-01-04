@@ -17,9 +17,10 @@ from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.model_selection import cross_val_score
 
+from riiid.cache import get_cache_manager
 from riiid.utils import downcast_int, logging_callback, keys_to_int, get_riiid_directory
 from riiid.config import FLOAT_DTYPE
-from riiid.core.data import load_pkl
+from riiid.core.data import load_pkl, TagsFactory
 from riiid.core.utils import update_pipeline, DataFrameAnalyzer
 from riiid.core.encoders import ScoreEncoder, RollingScoreEncoder, RatioEncoder
 from riiid.core.answers import AnswersEncoder, IncorrectAnswersEncoder, UserAnswersFrequencyEncoder
@@ -33,6 +34,7 @@ class RiiidModel:
     def __init__(self, questions, lectures, params):
         self.questions = questions
         self.lectures = lectures
+        self.tags_factory = None
         self.params = params
 
         self.metadata = {}
@@ -86,20 +88,17 @@ class RiiidModel:
             UserAnswersFrequencyEncoder(decay=0.99, smoothing_min=4, smoothing_value=1),
 
             QuestionsEmbedder(self.questions, **self.params['question_embedding']),
-            AnswersCorrectnessEmbedder(**self.params['answers_embedding']),
+            AnswersCorrectnessEmbedder(self.tags_factory, **self.params['answers_embedding']),
 
             RatioEncoder('task_container_id'),
             RatioEncoder('question_category'),
             RatioEncoder('question_tag'),
-            #RatioEncoder('question_two_tags'),
-            #RatioEncoder('question_last_tag'),
             RatioEncoder('question_tags'),
             RatioEncoder('content_id'),
 
             ScoreEncoder('question_part'),
             ScoreEncoder('question_category'),
             ScoreEncoder('question_tag'),
-            #ScoreEncoder('question_last_tag'),
             ScoreEncoder('content_id', cv=cv, updatable=True, transformable=True, **self.params['score_encoder']),
             ScoreEncoder('lecture_id', cv=cv, updatable=True, transformable=False, **self.params['score_encoder']),
             ScoreEncoder(['user_7900', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
@@ -146,7 +145,7 @@ class RiiidModel:
 
             ColumnsSelector(columns_to_drop=[
                 'user_id', 'content_id', 'user_answer', 'bundle_id', 'correct_answer', 'answered_correctly',
-                'question_tags', 'question_two_tags', 'question_last_tag', 'answer_weight',
+                'question_tags', 'answer_weight',
                 'lecture_id', 'lecture_tag', 'lecture_part', 'type_of',
                 'tasks_bucket_3', 'tasks_bucket_12'
             ], validate=True),
@@ -159,6 +158,8 @@ class RiiidModel:
     def fit_transform(self, X):
         self._init_fit(X)
         X = X.reset_index(drop=True)
+
+        self.fit_tags_factory()
 
         self.make_lectures_pipeline()
         X = self.lectures_pipeline.fit_transform(X)
@@ -177,6 +178,17 @@ class RiiidModel:
         DataFrameAnalyzer().summary(X)
 
         return X, y, train, valid
+
+    def fit_tags_factory(self):
+        if get_cache_manager().exists('tags_factory'):
+            self.tags_factory = get_cache_manager().load('tags_factory')
+        else:
+            logging.info('- Fit tags factory')
+            self.tags_factory = TagsFactory(self.questions)
+            get_cache_manager().save(self.tags_factory, 'tags_factory')
+
+        # We don't need tags anymore
+        self.questions = self.questions.drop(columns='tags')
 
     @staticmethod
     def remove_lectures(X):

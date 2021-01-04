@@ -40,6 +40,7 @@ FEATURES TO TRY
 - count lectures by tag (removed it because it was too weak but now...)
 - Mean and std of content_id_encoded by part
 - lecture_tag_content_id_encoded
+- last answered_correctly by different axis
 
 TRAIN 10000 users
 - Best score = 78.85%, in 305 iterations
@@ -49,6 +50,8 @@ TRAIN 10000 users
 - Best score = 78.95%, in 291 iterations
 - Best score = 78.96%, in 646 iterations
 - Best score = 78.92%, in 371 iterations (after refactoring incorrect answers encoder, maybe removing a bit of overfitting)
+- Best score = 78.93%, in 379 iterations (adding tags_similarity)
+- Best score = 78.96%, in 471 iterations (lag 3)
 
 TRAIN 30000 users
 - Best score = 79.50%, in 650 iterations
@@ -62,7 +65,7 @@ TRAIN 30000 users
 configure_console_logging()
 
 loader = DataLoader(INPUT_PATH)
-train, questions, lectures = loader.load_first_users(30000)
+train, questions, lectures = loader.load_first_users(10000)
 questions = preprocess_questions(questions)
 lectures = preprocess_lectures(lectures)
 

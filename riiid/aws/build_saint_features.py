@@ -23,15 +23,16 @@ try:
     train, test = model.split_train_test(train)
     train = model.create_features(train)
     test = model.create_features(test)
-    X_train, y_train = model.create_dataset(train, cast_types=False)
-    X_test, y_test = model.create_dataset(test, cast_types=False)
+    X_train, y_train = model.create_dataset(train)
+    X_test, y_test = model.create_dataset(test)
 
     bucket = S3Bucket(model.get_normalized_name())
     logging.info('Saving model')
     bucket.save_pickle(model, model.get_name(ext='pkl'))
 
     logging.info('Saving data')
-    bucket.save_pickle_multiparts((X_train, y_train, X_test, y_test), model.get_name('data.pkl'))
+    #bucket.save_pickle_multiparts((X_train, y_train, X_test, y_test), model.get_name('data.pkl'))
+    bucket.save_pickle((X_train, y_train, X_test, y_test), model.get_name('data.zip'), zip=True)
 
 except Exception as e:
     logging.info(str(e))

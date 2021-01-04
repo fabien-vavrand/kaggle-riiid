@@ -226,7 +226,7 @@ class Encoder(tf.keras.layers.Layer):
 
     def __init__(
         self, num_layers, d_model, num_heads, dff,
-        n_contents, n_parts, n_tags, n_times, n_tasks, maximum_position_encoding,
+        embedding_sizes, maximum_position_encoding,
         rate=0.1
     ):
         super(Encoder, self).__init__()
@@ -234,18 +234,18 @@ class Encoder(tf.keras.layers.Layer):
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.part_embedding_size = 4
-        self.tag_embedding_size = 32
-        self.time_embedding_size = 8
-        self.task_embedding_size = 8
+        self.part_embedding_size = embedding_sizes['part']
+        self.tag_embedding_size = 70
+        self.time_embedding_size = 20
+        self.task_embedding_size = 10
         self.content_embedding_size = self.d_model - self.part_embedding_size - self.tag_embedding_size - self.time_embedding_size - self.task_embedding_size - 1  # -1 for content_id_encoded
         logging.info('content embedding size = {}'.format(self.content_embedding_size))
 
-        self.content_embedding = tf.keras.layers.Embedding(n_contents, self.content_embedding_size)
-        self.part_embedding = tf.keras.layers.Embedding(n_parts, self.part_embedding_size)
-        self.tag_embedding = tf.keras.layers.Embedding(n_tags, self.tag_embedding_size)
-        self.time_embedding = tf.keras.layers.Embedding(n_times, self.time_embedding_size)
-        self.task_embedding = tf.keras.layers.Embedding(n_tasks, self.task_embedding_size)
+        self.content_embedding = tf.keras.layers.Embedding(embedding_sizes['content_id'], self.content_embedding_size)
+        self.part_embedding = tf.keras.layers.Embedding(embedding_sizes['part'], self.part_embedding_size)
+        self.tag_embedding = tf.keras.layers.Embedding(embedding_sizes['tags'], self.tag_embedding_size)
+        self.time_embedding = tf.keras.layers.Embedding(embedding_sizes['content_time'], self.time_embedding_size)
+        self.task_embedding = tf.keras.layers.Embedding(embedding_sizes['tasks_since_last_lecture'], self.task_embedding_size)
         self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
 
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
@@ -282,7 +282,7 @@ class Decoder(tf.keras.layers.Layer):
     def __init__(
         self,
         num_layers, d_model, num_heads, dff,
-        n_answered_contents, n_answers, n_times, maximum_position_encoding,
+        embedding_sizes, maximum_position_encoding,
         rate=0.1
     ):
         super(Decoder, self).__init__()
@@ -291,20 +291,22 @@ class Decoder(tf.keras.layers.Layer):
         self.num_layers = num_layers
 
         self.answer_embedding_size = 3
-        self.time_embedding_size = 8
-        self.answered_content_embedding_size = self.d_model - self.answer_embedding_size - self.time_embedding_size
+        self.time_embedding_size = 24
+        self.explanation_embedding_size = 3
+        self.answered_content_embedding_size = self.d_model - self.answer_embedding_size - self.time_embedding_size - self.explanation_embedding_size - 1  # -1 for elapsed_time
         logging.info('answered content embedding size = {}'.format(self.answered_content_embedding_size))
 
-        self.answered_content_embedding = tf.keras.layers.Embedding(n_answered_contents, self.answered_content_embedding_size)
-        self.answer_embedding = tf.keras.layers.Embedding(n_answers, self.answer_embedding_size)
-        self.time_embedding = tf.keras.layers.Embedding(n_times, self.time_embedding_size)
+        self.answered_content_embedding = tf.keras.layers.Embedding(embedding_sizes['content_id_answered_correctly'], self.answered_content_embedding_size)
+        self.answer_embedding = tf.keras.layers.Embedding(embedding_sizes['answered_correctly'], self.answer_embedding_size)
+        self.time_embedding = tf.keras.layers.Embedding(embedding_sizes['question_lag_time'], self.time_embedding_size)
+        self.explanation_embedding = tf.keras.layers.Embedding(embedding_sizes['question_had_explanation'], self.explanation_embedding_size)
         self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
 
         self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
         self.dropout = tf.keras.layers.Dropout(rate)
 
     def call(self, x, enc_output, training, look_ahead_mask, padding_mask):
-        x_answered_content, x_answer, x_content_time = x
+        x_answered_content, x_answer, x_elapsed_time, x_lag_time, x_explanation = x
         seq_len = tf.shape(x_answered_content)[1]
 
         # adding embedding and position encoding.
@@ -312,7 +314,9 @@ class Decoder(tf.keras.layers.Layer):
             (
                 self.answered_content_embedding(x_answered_content),
                 self.answer_embedding(x_answer),
-                self.time_embedding(x_content_time)
+                self.time_embedding(x_lag_time),
+                self.explanation_embedding(x_explanation),
+                tf.expand_dims(x_elapsed_time, axis=-1)
             ), axis=-1, name='concat_decoder'
         )  # (batch_size, target_seq_len, d_model)
         x = tf.cast(x, tf.float32)
@@ -330,30 +334,20 @@ class Decoder(tf.keras.layers.Layer):
 class Saint(tf.keras.Model):
 
     def __init__(self, num_layers, d_model, num_heads, dff,
-                 n_contents, n_parts, n_tags, n_times, n_tasks,
-                 n_answered_contents, n_answers,
-                 pe_input, pe_target, rate, **kwargs):
+                 embedding_sizes, pe_input, pe_target, rate, **kwargs):
         super(Saint, self).__init__(**kwargs)
 
         self.encoder = Encoder(
             num_layers, d_model, num_heads, dff,
-            n_contents=n_contents,
-            n_parts=n_parts,
-            n_tags=n_tags,
-            n_times=n_times,
-            n_tasks=n_tasks,
-            maximum_position_encoding=pe_input,
+            embedding_sizes, maximum_position_encoding=pe_input,
             rate=rate
         )
         self.decoder = Decoder(
             num_layers, d_model, num_heads, dff,
-            n_answered_contents=n_answered_contents,
-            n_answers=n_answers,
-            n_times=n_times,
-            maximum_position_encoding=pe_target,
+            embedding_sizes, maximum_position_encoding=pe_target,
             rate=rate
         )
-        self.final_layer = tf.keras.layers.Dense(n_answers, activation="softmax")
+        self.final_layer = tf.keras.layers.Dense(embedding_sizes['answered_correctly'], activation="softmax")
 
     def call(self, inputs, training):
         encoder_input, decoder_input = inputs

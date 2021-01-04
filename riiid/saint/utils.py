@@ -2,6 +2,7 @@ import logging
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import tensorflow.keras.backend as K
 from sklearn.metrics import roc_auc_score
 
 
@@ -51,6 +52,44 @@ def accuracy_function(real, pred):
     accuracies = tf.cast(accuracies, dtype=tf.float32)
     mask = tf.cast(mask, dtype=tf.float32)
     return tf.reduce_sum(accuracies) / tf.reduce_sum(mask)
+
+
+def binary_focal_loss(gamma=2.0, alpha=0.25):
+    """
+    Binary form of focal loss.
+      FL(p_t) = -alpha * (1 - p_t)**gamma * log(p_t)
+      where p = sigmoid(x), p_t = p or 1 - p depending on if the label is 1 or 0, respectively.
+    References:
+        https://arxiv.org/pdf/1708.02002.pdf
+    Usage:
+     model.compile(loss=[binary_focal_loss(alpha=.25, gamma=2)], metrics=["accuracy"], optimizer=adam)
+    """
+
+    def binary_focal_loss_fixed(y_true, y_pred):
+        """
+        :param y_true: A tensor of the same shape as `y_pred`
+        :param y_pred:  A tensor resulting from a sigmoid
+        :return: Output tensor.
+        """
+        y_pred = y_pred[:, :, -1]
+        mask = tf.math.logical_not(tf.math.equal(y_true, 0))
+        y_true = y_true - 1
+        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+        pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+
+        epsilon = K.epsilon()
+        # clip to prevent NaN's and Inf's
+        pt_1 = K.clip(pt_1, epsilon, 1.0 - epsilon)
+        pt_0 = K.clip(pt_0, epsilon, 1.0 - epsilon)
+        loss_ = -(alpha * K.pow(1.0 - pt_1, gamma) * K.log(pt_1)) - (
+            (1 - alpha) * K.pow(pt_0, gamma) * K.log(1.0 - pt_0)
+        )
+        mask = tf.cast(mask, dtype=loss_.dtype)
+        loss_ *= mask
+
+        return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
+
+    return binary_focal_loss_fixed
 
 
 def auc_function(real, pred, keep_last=None):

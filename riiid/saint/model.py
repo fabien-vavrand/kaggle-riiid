@@ -15,7 +15,7 @@ from riiid.core.neural import TrainingLogs
 from riiid.core.utils import update_pipeline
 
 from riiid.saint.layers import Saint
-from riiid.saint.utils import CustomSchedule, loss_function, accuracy_function, auc_function
+from riiid.saint.utils import CustomSchedule, loss_function, accuracy_function, auc_function, binary_focal_loss
 from riiid.saint.transformers import LecturesTransformer, QuestionsTransformer
 
 
@@ -27,16 +27,23 @@ class SaintModel:
         self.length = length
         self.pad_token = 0
 
+        self.time_bins = 50
+        self.elapsed_bins = 40  # Not used
+        self.lag_bins = 40
+
         self.num_layers = 4
-        self.d_model = 128
-        self.dff = 64
+        self.d_model = 256
+        self.dff = 256
         self.num_heads = 4  #8
-        self.dropout = 0.2
+        self.dropout = 0.1
         self.epochs = 1
-        self.batch_size = 128
-        self.validation_batch_size = 128
+        self.batch_size = 64
+        self.validation_batch_size = 64
         self.warmup = 5000
         self.patience = 2
+        self.use_focal_loss = False
+
+        self.validation_ratio = 0.05
 
         self.model_id: str = None
         self.metadata = {}
@@ -46,19 +53,26 @@ class SaintModel:
             "content_id": {"n": 13523, "min": 1, "max": 13523},
             "part": {"n": 7, "min": 1, "max": 7},
             "tag": {"n": 118, "min": 1, "max": 118},
-            "content_time": {"n": 21, "min": 0, "max": 20},
+            "tags": {"n": 1520, "min": 1, "max": 1520},
+            "content_time": {"n": self.time_bins + 1, "min": 0, "max": self.time_bins},
+            "question_elapsed_time": {"n": self.elapsed_bins + 1, "min": 0, "max": self.elapsed_bins},
+            "question_lag_time": {"n": self.lag_bins + 1, "min": 0, "max": self.lag_bins},
+            "question_had_explanation": {"n": 2, "min": 1, "max": 2},
             "tasks_since_last_lecture": {"n": 12, "min": 1, "max": 12},
             "content_id_answered_correctly": {"n": 27046, "min": 1, "max": 27046},
             "answered_correctly": {"n": 2, "min": 1, "max": 2},
         }
         self.features = {
-            'content_id': np.int32, 'part': np.int32, 'tag': np.int32,
-            'content_time': np.int32, 'tasks_since_last_lecture': np.int32, 'content_id_encoded': np.float32,
-            'content_id_answered_correctly': np.int32, 'answered_correctly': np.int32
+            'content_id': np.int32, 'part': np.int32, 'tags': np.int32, 'content_time': np.int32,
+            'tasks_since_last_lecture': np.int32, 'content_id_encoded': np.float32,
+            'content_id_answered_correctly': np.int32, 'answered_correctly': np.int32,
+            'question_lag_time': np.int32, 'question_had_explanation': np.int32, 'question_elapsed_time': np.float32
         }
-        self.encoder_features = ['content_id', 'part', 'tag', 'content_time', 'tasks_since_last_lecture', 'content_id_encoded']
-        self.decoder_features = ['content_id_answered_correctly', 'answered_correctly', 'content_time']
-        self.independent_features = ['content_id', 'part', 'tag', 'content_id_encoded', 'tasks_since_last_lecture', 'content_time']
+        self.encoder_features = ['content_id', 'part', 'tags', 'content_time', 'tasks_since_last_lecture', 'content_id_encoded']
+        self.decoder_features = ['content_id_answered_correctly', 'answered_correctly', 'question_elapsed_time', 'question_lag_time', 'question_had_explanation']
+
+        self.prior_features = ['question_elapsed_time', 'question_lag_time', 'question_had_explanation']
+        self.independent_features = ['content_id', 'part', 'tags', 'content_time', 'tasks_since_last_lecture', 'content_id_encoded']
         self.dependent_features = ['content_id_answered_correctly', 'answered_correctly']
 
         self.lectures_pipeline = None
@@ -66,6 +80,7 @@ class SaintModel:
         self.model = None
         self.context_features = None
         self.context_users = None
+        self.context_priors = None
 
         self.previous_test = None
         self.test_batch = 0
@@ -94,7 +109,7 @@ class SaintModel:
         cv = self._build_cv(X)
         self.pipeline = make_pipeline(
             ScoreEncoder('content_id', cv=cv, smoothing_min=5, smoothing_value=1, noise=0.005),
-            QuestionsTransformer(self.questions)
+            QuestionsTransformer(self.questions, time_bins=self.time_bins, lag_bins=self.lag_bins)
         )
         X = self.pipeline.fit_transform(X)
 
@@ -118,9 +133,13 @@ class SaintModel:
         self.context_features = self.create_features(X)
         self.context_users = {user_id: i for i, (user_id, _) in enumerate(X.groupby('user_id'))}
 
+        X = X.groupby(['user_id', 'task_container_id'], sort=False).size().reset_index(name='size')
+        X = X.drop_duplicates('user_id', keep='last')[['user_id', 'size']]
+        self.context_priors = X.set_index('user_id')['size'].to_dict()
+
     def split_train_test(self, X):
         user_ids = X['user_id'].unique()
-        test_size = int(0.1 * len(user_ids))
+        test_size = int(self.validation_ratio * len(user_ids))
         train_uids = user_ids[:-test_size]
         test_uids = user_ids[-test_size:]
 
@@ -192,20 +211,18 @@ class SaintModel:
             d_model=self.d_model,
             num_heads=self.num_heads,
             dff=self.dff,
-            n_contents=self._get_embedding_size('content_id'),
-            n_parts=self._get_embedding_size('part'),
-            n_tags=self._get_embedding_size('tag'),
-            n_times=self._get_embedding_size('content_time'),
-            n_tasks=self._get_embedding_size('tasks_since_last_lecture'),
-            n_answered_contents=self._get_embedding_size('content_id_answered_correctly'),
-            n_answers=self._get_embedding_size('answered_correctly'),
+            embedding_sizes={f: self._get_embedding_size(f) for f in self.categoricals},
             pe_input=self.length-1,
             pe_target=self.length-1,
             rate=self.dropout
         )
         lr = CustomSchedule(self.d_model, warmup_steps=self.warmup)
         opt = tf.keras.optimizers.Adam(learning_rate=lr, epsilon=1e-8)
-        self.model.compile(loss=loss_function, optimizer=opt)  # metrics=[accuracy]
+        if self.use_focal_loss:
+            focal_loss_function = binary_focal_loss(gamma=2.0, alpha=0.30)
+            self.model.compile(loss=focal_loss_function, optimizer=opt)
+        else:
+            self.model.compile(loss=loss_function, optimizer=opt)
 
     def _get_embedding_size(self, column):
         # The min value is usually 1, so we add 1 for the padding token
@@ -226,11 +243,11 @@ class SaintModel:
         test_ds = self.to_dataset(X_test, y_test, shuffle=False)
         history = self.model.fit(train_ds, validation_data=test_ds, epochs=self.epochs, callbacks=my_callbacks, verbose=0)
 
-    def score(self, X, y):
+    def score(self, X, y, keep_last=None):
         y_pred = self.model.predict(X, batch_size=self.validation_batch_size, verbose=0)
-        self.scores['auc'] = auc_function(y, y_pred)
-        logging.info('Score = {:.2%}'.format(self.scores['auc']))
-        return
+        auc = auc_function(y, y_pred, keep_last=keep_last)
+        logging.info('AUC (last {}) = {:.2%}'.format(keep_last, auc))
+        return auc
 
     def update(self, test):
         prior_user_answer = eval(test['prior_group_responses'].values[0])
@@ -272,6 +289,32 @@ class SaintModel:
                 for f in features:
                     self.context_features[f][idx, -1] = values[f][r]
 
+    def _update_context_with_priors(self, X):
+        user_id = X['user_id'].values
+        values = {f: X[f].values for f in self.prior_features}
+        context = {}
+
+        for r in range(len(X)):
+            if user_id[r] not in context:
+                context[user_id[r]] = 0
+
+                # We only update priors once per user
+                try:
+                    idx = self.context_users[user_id[r]]
+                    task_size = self.context_priors[user_id[r]]
+                    for f in self.prior_features:
+                        self.context_features[f][idx, :] = np.roll(self.context_features[f][idx, :], -task_size)
+                        for i in range(1, task_size + 1):
+                            self.context_features[f][idx, -i] = values[f][r]
+                except KeyError:
+                    # Either we know the user, or there are no priors
+                    pass
+
+            context[user_id[r]] += 1
+
+        # Update context
+        self.context_priors.update(context)
+
     def predict(self, X):
         if self.test_batch % 1 == 0:
             logging.info('Running test batch {}'.format(self.test_batch))
@@ -281,6 +324,7 @@ class SaintModel:
         if len(X) > 0:
             predictions = X[['row_id']].copy()
             X = self.pipeline.transform(X)
+            self._update_context_with_priors(X)
             inputs = self._create_prediction_data(X)
             self._update_context(X, self.independent_features)
             predictions['answered_correctly'] = self.model.predict(inputs)[:, -1, -1]
@@ -323,7 +367,8 @@ class SaintModel:
     def load_model_from_path(self, path):
         self.model = tf.keras.models.load_model(path, custom_objects={
             'CustomSchedule': CustomSchedule,
-            'loss_function': loss_function
+            'loss_function': loss_function,
+            'focal_loss_function': binary_focal_loss(gamma=2.0, alpha=0.30)
         })
 
     @staticmethod
