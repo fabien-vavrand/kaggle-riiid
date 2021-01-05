@@ -20,7 +20,7 @@ from sklearn.model_selection import cross_val_score
 from riiid.cache import get_cache_manager
 from riiid.utils import downcast_int, logging_callback, keys_to_int, get_riiid_directory
 from riiid.config import FLOAT_DTYPE
-from riiid.core.data import load_pkl, TagsFactory
+from riiid.core.data import load_pkl, TagsFactory, compute_communities
 from riiid.core.utils import update_pipeline, DataFrameAnalyzer
 from riiid.core.encoders import ScoreEncoder, RollingScoreEncoder, RatioEncoder
 from riiid.core.answers import AnswersEncoder, IncorrectAnswersEncoder, UserAnswersFrequencyEncoder
@@ -116,8 +116,6 @@ class RiiidModel:
             RollingScoreEncoder(['user_id', 'question_category'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_tag'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_community'], count=True, time_since_last=True, **self.params['user_score_encoder']),
-            #RollingScoreEncoder(['user_id', 'question_last_tag'], count=True, time_since_last=True, **self.params['user_score_encoder']),
-            #RollingScoreEncoder(['user_id', 'question_two_tags'], count=True, time_since_last=True, **self.params['user_score_encoder']),
 
             RollingScoreEncoder(['user_id', 'content_id'], count=True, time_since_last=True, **self.params['user_content_score_encoder']),
             RollingScoreEncoder(['user_id', 'content_id'], rolling=1, smoothing_value=None),
@@ -166,7 +164,7 @@ class RiiidModel:
         self._init_fit(X)
         X = X.reset_index(drop=True)
 
-        self.fit_tags_factory()
+        self.fit_tags_features()
 
         self.make_lectures_pipeline()
         X = self.lectures_pipeline.fit_transform(X)
@@ -186,13 +184,21 @@ class RiiidModel:
 
         return X, y, train, valid
 
-    def fit_tags_factory(self):
+    def fit_tags_features(self):
         if get_cache_manager().exists('tags_factory'):
             self.tags_factory = get_cache_manager().load('tags_factory')
         else:
             logging.info('- Fit tags factory')
             self.tags_factory = TagsFactory(self.questions)
             get_cache_manager().save(self.tags_factory, 'tags_factory')
+
+        if get_cache_manager().exists('louvain'):
+            louvain = get_cache_manager().load('louvain')
+        else:
+            logging.info('- Fit louvain communities')
+            louvain = compute_communities(self.questions)
+            get_cache_manager().save(louvain, 'louvain')
+        self.questions = pd.merge(self.questions, louvain, how='left', left_on='content_id', right_index=True)
 
         # We don't need tags anymore
         self.questions = self.questions.drop(columns='tags')

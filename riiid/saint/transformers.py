@@ -95,11 +95,11 @@ class LecturesTransformer:
                 context = self.context[user_id[r]]
                 context['prior_timestamp'] = int(timestamp[r])
                 if content_type_id[r] == 1:
-                    context['last_lecture_task_container_id'] = int(task_container_id[r])
+                    context['last_lecture_task_container_id'] = float(task_container_id[r])
             except KeyError:
                 self.context[user_id[r]] = {
                     'prior_timestamp': int(timestamp[r]),
-                    'last_lecture_task_container_id': np.nan if content_type_id[r] == 0 else int(task_container_id[r])
+                    'last_lecture_task_container_id': np.nan if content_type_id[r] == 0 else float(task_container_id[r])
                 }
 
     def update(self, X, y=None):

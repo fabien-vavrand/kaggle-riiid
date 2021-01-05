@@ -33,9 +33,9 @@ class SaintModel:
 
         self.num_layers = 4
         self.d_model = 256
-        self.dff = 256
+        self.dff = 128
         self.num_heads = 4  #8
-        self.dropout = 0.1
+        self.dropout = 0.3
         self.epochs = 1
         self.batch_size = 64
         self.validation_batch_size = 64
@@ -259,7 +259,7 @@ class SaintModel:
             self.previous_test['answered_correctly'] = prior_answered_correctly
 
             X = self.previous_test
-            X = update_pipeline(self.lectures_pipeline, X)
+            # X = update_pipeline(self.lectures_pipeline, X)  # Not required
             X = RiiidModel.remove_lectures(X)
             if len(X) > 0:
                 y = X['answered_correctly']
@@ -303,9 +303,9 @@ class SaintModel:
                     idx = self.context_users[user_id[r]]
                     task_size = self.context_priors[user_id[r]]
                     for f in self.prior_features:
-                        self.context_features[f][idx, :] = np.roll(self.context_features[f][idx, :], -task_size)
-                        for i in range(1, task_size + 1):
-                            self.context_features[f][idx, -i] = values[f][r]
+                        #self.context_features[f][idx, :] = np.roll(self.context_features[f][idx, :], -task_size)
+                        for i in range(task_size):
+                            self.context_features[f][idx, -i - 1] = values[f][r]
                 except KeyError:
                     # Either we know the user, or there are no priors
                     pass
@@ -314,6 +314,18 @@ class SaintModel:
 
         # Update context
         self.context_priors.update(context)
+
+    def _roll_context_on_priors(self, X):
+        for user_id in X['user_id'].values:
+            task_size = self.context_priors[user_id]
+            try:
+                idx = self.context_users[user_id]
+                for f in self.prior_features:
+                    # Warning: last values are wrong because of roll, but will be overwritten before being used
+                    self.context_features[f][idx, :] = np.roll(self.context_features[f][idx, :], -task_size)
+            except KeyError:
+                # New user, priors are empty
+                pass
 
     def predict(self, X):
         if self.test_batch % 1 == 0:
@@ -326,6 +338,7 @@ class SaintModel:
             X = self.pipeline.transform(X)
             self._update_context_with_priors(X)
             inputs = self._create_prediction_data(X)
+            self._roll_context_on_priors(X)
             self._update_context(X, self.independent_features)
             predictions['answered_correctly'] = self.model.predict(inputs)[:, -1, -1]
         else:
