@@ -133,3 +133,6 @@ class DensityTransformer:
         for column in self.columns:
             X['{}_density'.format(column.replace('_count', ''))] = (X[column] / X['user_id_count']).fillna(0)
         return X
+
+    def update_transform(self, X, y=None):
+        return X

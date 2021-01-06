@@ -119,11 +119,6 @@ class SessionFeaturer:
         tasks['task_diff'] = tasks.groupby('user_id')['task_container_id'].diff()
         X = pd.merge(X, tasks, on=['user_id', 'task_container_id'], how='left')
 
-        # Compute prior answered_correctly
-        tasks = X[X['content_type_id'] == 0].groupby(['user_id', 'task_container_id'], sort=False)['answered_correctly'].mean().reset_index(name='prior_answered_correctly')
-        tasks['prior_answered_correctly'] = tasks.groupby('user_id')['prior_answered_correctly'].shift()
-        X = pd.merge(X, tasks, on=['user_id', 'task_container_id'], how='left')
-
         return X
 
     def _update_pre_transform(self, X):
@@ -409,6 +404,8 @@ class QuestionsFeaturer:
         return self
 
     def transform(self, X):
+        self._update_pre_transform(X)
+
         X = pre_filtered_indexed_merge(X, self.questions, left_on='content_id')
         X['mean_content_time'] = (X['content_time'] / X['mean_content_time']).astype(FLOAT_DTYPE)
         X['content_time'] = X['content_time'].astype(FLOAT_DTYPE)
@@ -459,7 +456,7 @@ class QuestionsFeaturer:
                 results[r] = lectures_tags[r, mapping[tags[r]]]
         return results
 
-    def update(self, X, y=None):
+    def _update_pre_transform(self, X, y=None):
         user_id = X['user_id'].values
         content_id = X['content_id'].values
         task_container_id = X['task_container_id'].values
@@ -468,9 +465,13 @@ class QuestionsFeaturer:
             if task_container_id[r] == 0 and content_id[r] == 7900:
                 self.users_7900.add(user_id[r])
 
+    def update(self, X, y=None):
+        pass
+
     def update_transform(self, X, y=None):
         self.update(X, y)
         X = pre_filtered_indexed_merge(X, self.questions, left_on='content_id')
+        X['user_7900'] = (X['user_id'].isin(self.users_7900) * 1).astype(np.int8)
         return X
 
 

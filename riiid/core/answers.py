@@ -296,21 +296,21 @@ class UserAnswersFrequencyEncoder(Smoother):
             try:
                 context = self.context[user_id[r]]
             except KeyError:
-                context = [0] * 8
+                context = [0.0] * 8
                 self.context[user_id[r]] = context
             try:
-                ratios = self.answers_ratios[content_id]
+                ratios = self.answers_ratios[content_id[r]]
             except KeyError:
                 ratios = [0.25] * 4  # should not occur on full dataset
 
             # decay user only once
             if user_id[r] not in decayed:
                 decayed.add(user_id[r])
-                context = context * self.decay
+                context = [c * self.decay for c in context]
 
             context[user_answer[r]] += 1
             for i in range(4, 8):
-                context[i] += ratios[i]
+                context[i] += ratios[i - 4]
             self.context[user_id[r]] = context
 
         return self

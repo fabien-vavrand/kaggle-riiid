@@ -25,9 +25,6 @@ try:
     questions = preprocess_questions(questions)
     lectures = preprocess_lectures(lectures)
 
-    users = train['user_id'].unique()[:200000]
-    train = train[train['user_id'].isin(users)].reset_index(drop=True)
-
     test = loader.load_tests('tests_0.pkl')
     train = merge_test(train, test)
     del test
@@ -37,8 +34,8 @@ try:
     model = RiiidModel(questions, lectures, params=PARAMS)
     X, y, train, valid = model.fit_transform(train)
 
-    bucket = S3Bucket(model.get_normalized_name())
     logging.info('Saving unfitted model')
+    bucket = S3Bucket(model.get_normalized_name())
     bucket.save_multiparts(model.save_with_source(), model.get_name())
 
     logging.info('Saving data')
@@ -46,9 +43,10 @@ try:
         bucket.save_pickle_multiparts(data, name)
 
     model.fit_lgbm(X[train], y[train], X[valid], y[valid])
+    bucket.save_pickle_multiparts(model.models[-1], model.get_name('lgbm.pkl'))
 
-    logging.info('Saving model')
-    bucket.save_multiparts(model.save_with_source(), model.get_name())
+    model.fit_catboost(X[train], y[train], X[valid], y[valid])
+    bucket.save_pickle_multiparts(model.models[-1], model.get_name('catboost.pkl'))
 
 except Exception as e:
     logging.info(str(e))

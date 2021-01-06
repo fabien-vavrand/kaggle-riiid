@@ -106,8 +106,7 @@ class RiiidModel:
             ScoreEncoder(['user_7900', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
             ScoreEncoder(['tasks_bucket_3', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
             ScoreEncoder(['tasks_bucket_12', 'content_id'], cv=cv, parent_prior='tasks_bucket_3_content_id_encoded', updatable=True, **self.params['score_encoder_2']),
-            ScoreEncoder(['lecture_id', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, transformable=False, **self.params['score_encoder_2']),
-            ScoreEncoder(['prior_question_had_explanation', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, transformable=False, **self.params['score_encoder_2']),
+            #ScoreEncoder(['prior_question_had_explanation', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, transformable=False, **self.params['score_encoder_2']),
 
             WeightedAnswerTransformer('content_id_encoded'),
 
@@ -116,9 +115,7 @@ class RiiidModel:
             RollingScoreEncoder(['user_id', 'question_category'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_tag'], count=True, time_since_last=True, **self.params['user_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_community'], count=True, time_since_last=True, **self.params['user_score_encoder']),
-
             RollingScoreEncoder(['user_id', 'content_id'], count=True, time_since_last=True, **self.params['user_content_score_encoder']),
-            RollingScoreEncoder(['user_id', 'content_id'], rolling=1, smoothing_value=None),
 
             RollingScoreEncoder(['user_id'], **self.params['user_rolling_score_encoder']),
             RollingScoreEncoder(['user_id', 'question_part'], **self.params['user_rolling_score_encoder']),
@@ -134,7 +131,6 @@ class RiiidModel:
 
             RollingScoreEncoder(['user_id'], decay=0.99, smoothing_min=10, smoothing_value=2),
             RollingScoreEncoder(['user_id', 'question_part'], decay=0.99, smoothing_min=10, smoothing_value=2),
-            RollingScoreEncoder(['user_id', 'question_community'], decay=0.99, smoothing_min=10, smoothing_value=2),
 
             RollingScoreEncoder(['user_id'], decay=0.9, smoothing_min=1, smoothing_value=1),
             RollingScoreEncoder(['user_id', 'question_part'], decay=0.9, smoothing_min=1, smoothing_value=1),
@@ -143,6 +139,7 @@ class RiiidModel:
             RollingScoreEncoder(['user_id', 'question_community'], decay=0.9, smoothing_min=1, smoothing_value=1),
 
             RollingScoreEncoder(['user_id'], weighted=True, decay=0.98, smoothing_min=4, smoothing_value=1),
+            RollingScoreEncoder(['user_id', 'content_id'], rolling=1, smoothing_value=None),
 
             LaggingFeaturer(['content_id_encoded', 'mean_content_time', 'prior_question_time', 'prior_question_elapsed_time', 'prior_answer_ratio'], lag=3),
 
@@ -258,22 +255,9 @@ class RiiidModel:
         })
         logging.info('Best score = {:.2%}, in {} iterations'.format(best_score, model.best_iteration))
 
-    # Deprecated
-    def refit_model(self, X, y):
-        logging.info('- Refit lightgbm model')
-
-        train_set = lgb.Dataset(X, y)
-        model = lgb.train(
-            self.params['lgbm_params'],
-            train_set,
-            num_boost_round=self.best_iteration,
-            verbose_eval=-1
-        )
-
     def fit_catboost(self, X, y, X_val, y_val):
         logging.info('- Fit catboost model')
-        feature_id = list(X.columns).index('task_bucket_12_content_id_encoded')
-        model = CatBoostClassifier(iterations=10000, per_float_feature_quantization=f'{feature_id}:border_count=1024', eval_metric='AUC')
+        model = CatBoostClassifier(iterations=10000, eval_metric='AUC')
         model.fit(X, y, eval_set=(X_val, y_val), early_stopping_rounds=50, verbose=100)
 
         best_score = model.get_best_score()['validation']['AUC']
