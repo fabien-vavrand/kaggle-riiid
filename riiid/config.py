@@ -11,6 +11,10 @@ SUBMIT_PATH = os.path.join(PATH, 'submit')
 TEST_PATH = os.path.join(PATH, 'tests')
 TUNE_PATH = os.path.join(PATH, 'tuning')
 
+for path in [MODELS_PATH, SUBMIT_PATH, TEST_PATH, TUNE_PATH]:
+    if not os.path.exists(path):
+        os.mkdir(path)
+
 
 FLOAT_DTYPE = np.float32
 ACTIVATE_CACHE = True
