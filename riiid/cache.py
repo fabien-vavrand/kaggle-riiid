@@ -8,6 +8,8 @@ class CacheManager:
 
     def __init__(self, path, activated=True):
         self.path = os.path.join(path, '.cache')
+        if not os.path.exists(self.path):
+            os.mkdir(self.path)
         self.activated = activated
 
     def _get_path(self, cache_id):
