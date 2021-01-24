@@ -246,31 +246,3 @@ def _compute_user_answers_ratio(user_id, user_answer, correct_answer, answers_ra
     users.append(uid)
     contexts.append(user_context.copy())
     return results, users, contexts
-
-
-# deprecated
-@njit
-def order_answer_ratios(ratios):
-    results = np.empty(ratios.shape)
-    for r in range(ratios.shape[0]):
-        results[r, :] = np.sort(ratios[r, :])
-    return results
-
-
-if __name__ == '__main__':
-    import pandas as pd
-    df = pd.DataFrame({
-        'user_id': [1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
-        'tag_id': [1, 1, 0, 1, 0, 1, 1, 0, 0, 1],
-        'timestamp': [0, 100, 200, 200, 500, 0, 1000, 2200, 2200, 2200],
-        'task_container_id': [1, 1, 1, 2, 3, 1, 2, 2, 3, 3],
-        'target': [1, 0, 0, 1, 1, 0, 0, 1, 1, 1]
-    })
-
-
-    results, keys, values = rolling_score(df[['user_id', 'timestamp', 'task_container_id', 'target']].to_numpy(), 6)
-    df['sum'] = results[:, 0]
-    df['count'] = results[:, 1]
-    history = {tuple(k): v for k, v in zip(keys, values)}
-    print(df)
-    print(history)

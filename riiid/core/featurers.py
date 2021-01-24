@@ -4,16 +4,16 @@ import numpy as np
 import pandas as pd
 
 from riiid.config import FLOAT_DTYPE
-from riiid.utils import downcast_int, get_tuple_index
 from riiid.core.computation import rolling_sum, rolling_categories_count, last_lecture
 from riiid.core.utils import indexed_merge, pre_filtered_indexed_merge, tasks_bucket_3, tasks_bucket_12, tasks_group
-from riiid.cache import get_cache_manager
 
 
 class SessionFeaturer:
+    """
+    Compute 5 features: 'session_id', 'session_time', 'content_time', 'prior_question_time', 'prior_question_lost_time'
+    """
 
     def __init__(self, hours_between_sessions=2):
-        # Compute 5 features: 'session_id', 'session_time', 'content_time', 'prior_question_time', 'prior_question_lost_time'
         self.hours_between_sessions = hours_between_sessions
         self.content_time_groupby = ['user_id', 'session_id']
 
@@ -180,9 +180,6 @@ class SessionFeaturer:
             X[feature] = results[:, i]
         return X
 
-    def update(self, X):
-        pass
-
     def update_transform(self, X, y=None):
         return X
 
@@ -232,27 +229,6 @@ class LecturesFeaturer:
         for i, feature in enumerate(parts_features):
             X[feature] = counts[:, i]
 
-        """
-        # Count lectures type of
-        # deprecated because of type_of encoding
-        types_of = ['concept', 'solving question', 'intention', 'starter']
-        types_of_features = [f"n_lectures_{type_of.replace(' ', '_')}" for type_of in types_of]
-        X['type_of'] = X['type_of'].map({to: i for i, to in enumerate(types_of)})
-        counts = rolling_categories_count(X[['user_id', 'type_of']].to_numpy(), n_categories=4)
-        for i, feature in enumerate(types_of_features):
-            X[feature] = counts[:, i]
-        """
-
-        """
-        # Count lectures tags
-        tags = sorted(self.lectures['lecture_tag'].unique())
-        tags_features = [f"n_lectures_tag{tag}" for tag in tags]
-        X['lecture_tag'] = X['lecture_tag'].map({tag: i for i, tag in enumerate(tags)})
-        counts = rolling_categories_count(X[['user_id', 'lecture_tag']].to_numpy(), n_categories=len(tags))
-        for i, feature in enumerate(tags_features):
-            X[feature] = counts[:, i]
-        """
-
         # last lecture features
         last_lecture_features = ['tasks_since_last_lecture', 'time_since_last_lecture', 'last_lecture_time', 'lecture_id', 'lecture_tag', 'lecture_part']
         X['tasks_since_last_lecture'] = last_lecture(X, 'task_container_id')
@@ -268,10 +244,8 @@ class LecturesFeaturer:
         X['lecture_part'] = X['lecture_part'].fillna(-1).astype(np.int8)
         X['type_of'] = X['type_of'].fillna(-1).astype(np.int8)
 
+        # Build context
         self.features = ['n_lectures'] + parts_features + last_lecture_features
-        #X = X.drop(columns=['lecture_id', 'lecture_tag', 'lecture_part', 'type_of'])
-
-        # Building context
         self.context = X[['user_id'] + self.features].drop_duplicates('user_id', keep='last').set_index('user_id').to_dict(orient='index')
         return X
 
@@ -280,7 +254,6 @@ class LecturesFeaturer:
         X['tasks_since_last_lecture'] = X['task_container_id'] - X['tasks_since_last_lecture']
         X['tasks_bucket_12'] = X['tasks_since_last_lecture'].fillna(0).apply(tasks_bucket_12).astype(np.int16)
         X['tasks_bucket_3'] = X['tasks_since_last_lecture'].fillna(0).apply(tasks_bucket_3).astype(np.int8)
-        #X['recent_lecture_id'] = X['lecture_id'] * X['tasks_since_last_lecture'].apply(lambda x: 1 if 1 <= x <= 2 else np.nan)
         return X
 
     def _downcast(self, X):
@@ -303,7 +276,6 @@ class LecturesFeaturer:
         lecture_id = X['lecture_id'].values
         lecture_tag = X['lecture_tag'].values
         lecture_part = X['lecture_part'].values
-        #lecture_typeof = X['type_of'].values
 
         for r in range(len(users)):
             try:
@@ -314,7 +286,6 @@ class LecturesFeaturer:
 
             context['n_lectures'] += 1
             context[f'n_lectures_part{lecture_part[r]}'] += 1
-            #context[f"n_lectures_{lecture_typeof[r].replace(' ', '_')}"] += 1
             context['tasks_since_last_lecture'] = int(task_container_id[r])
             context['time_since_last_lecture'] = int(timestamp[r])
             context['last_lecture_time'] = float(lecture_time[r])
@@ -341,9 +312,6 @@ class LecturesFeaturer:
         for i, feature in enumerate(self.features):
             X[feature] = results[:, i]
         return X
-
-    def update(self, X, y=None):
-        pass
 
     def update_transform(self, X, y=None):
         users = X['user_id'].values
@@ -380,14 +348,6 @@ class QuestionsFeaturer:
     def fit(self, X, y=None):
         logging.info('- Fit questions featurer')
 
-        # Compute bundle_size
-        """
-        bundles = self.questions.groupby('bundle_id').size()
-        bundles.name = 'bundle_size'
-        self.questions = pd.merge(self.questions, bundles, on='bundle_id')
-        self.questions['bundle_size'] = self.questions['bundle_size'].astype(np.int8)
-        """
-
         # Compute mean_content_time
         self.content_time = X['content_time'].median()
         questions = X[['content_id', 'content_time']].dropna().groupby('content_id')['content_time'].agg(['median', 'count'])
@@ -401,6 +361,7 @@ class QuestionsFeaturer:
 
         # Keep list of users for whom the first question was 7900
         self.users_7900 = set(X[(X['task_container_id'] == 0) & (X['content_id'] == 7900)]['user_id'].unique())
+
         return self
 
     def transform(self, X):
@@ -411,25 +372,15 @@ class QuestionsFeaturer:
         X['content_time'] = X['content_time'].astype(FLOAT_DTYPE)
         X['prior_question_had_explanation'] = ((X['prior_question_had_explanation'] * 1).fillna(0)).astype(np.int8)
 
+        # Retrieve lecture part count for question part, and delete lectures part counts
         X['n_lectures_on_question_part'] = self._get_n_lectures_on_question_part(X)
         X = X.drop(columns=[f'n_lectures_part{part}' for part in list(range(1, 8))])
-
-        """
-        X['n_lectures_on_question_tag'] = self._get_n_lectures_on_question_tag(X)
-        tag_features_to_drop = [f'n_lectures_tag{tag}' for tag in list(range(200))]
-        tag_features_to_drop = [t for t in tag_features_to_drop if t in X.columns]
-        X = X.drop(columns=tag_features_to_drop)
-        """
 
         # compute task size
         tasks = X.groupby(['user_id', 'task_container_id']).size()
         tasks.name = 'task_size'
         X = indexed_merge(X, tasks, left_on=['user_id', 'task_container_id'])
         X['task_size'] = X['task_size'].astype(np.int8)
-
-        # Compute prior question tag
-        #X['prior_question_tag'] = X.groupby('user_id')['question_tag'].shift()
-        #X['prior_question_tag'] = X['prior_question_tag'].fillna(-1).astype(np.int16)
 
         X['user_7900'] = (X['user_id'].isin(self.users_7900) * 1).astype(np.int8)
 
@@ -465,11 +416,7 @@ class QuestionsFeaturer:
             if task_container_id[r] == 0 and content_id[r] == 7900:
                 self.users_7900.add(user_id[r])
 
-    def update(self, X, y=None):
-        pass
-
     def update_transform(self, X, y=None):
-        self.update(X, y)
         X = pre_filtered_indexed_merge(X, self.questions, left_on='content_id')
         X['user_7900'] = (X['user_id'].isin(self.users_7900) * 1).astype(np.int8)
         return X

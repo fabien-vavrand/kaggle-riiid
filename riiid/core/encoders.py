@@ -3,13 +3,9 @@ import typing as t
 import numpy as np
 import pandas as pd
 
-from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_random_state
-from sklearn.impute import SimpleImputer
 
 from riiid.config import FLOAT_DTYPE
-from riiid.utils import make_tuple
-from riiid.core.utils import indexed_merge
 from riiid.core.computation import rolling_score, sorted_rolling_score, last_feature_value_time, compute_user_answers_ratio
 
 
@@ -85,13 +81,6 @@ class ScoreEncoder(Smoother):
         return results
 
     def _fit(self, X):
-        """ Remove duplicates
-        columns = self.columns.copy() if isinstance(self.columns, list) else [self.columns]
-        columns += ['user_id', 'content_id', 'answered_correctly']
-        columns = list(set(columns))
-        X = X[columns].drop_duplicates(['user_id', 'content_id'], keep='first')
-        """
-
         prior = X['answered_correctly'].mean()
         posteriors = X.groupby(self.columns)['answered_correctly'].agg([np.sum, 'count'])
         posteriors['sum'] = posteriors['sum'].astype(np.int64)
@@ -285,12 +274,6 @@ class RollingScoreEncoder(Smoother):
             else:
                 return roll
         else:
-            """
-            if self.weighted:
-                return [np.sum([r * w for r, w in zip(roll, weight)]), np.sum(weight)]
-            else:
-                return [int(np.sum(roll)), len(roll)]
-            """
             if self.weighted or self.decay is not None:
                 return key_context
             else:
@@ -380,7 +363,7 @@ class RollingScoreEncoder(Smoother):
             timestamp = X['timestamp'].values
             task_container_id = X['task_container_id'].values
         rows, columns = len(X), len(values)
-        decayed = set()  # As we don't want to apply decay multiple times for a multi questions task, we on
+        decayed = set()  # As we don't want to apply decay multiple times for a multi questions task
         for r in range(rows):
             try:
                 context = self.context

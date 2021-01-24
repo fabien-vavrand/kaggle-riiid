@@ -116,7 +116,6 @@ class WeightedAnswerTransformer:
 
     def _transform(self, X):
         X['answer_weight'] = (X['answered_correctly'] == 0) * X[self.column] + (X['answered_correctly'] == 1) * (1 - X[self.column])
-        #X['answer_weight'] = -((X['answered_correctly'] == 0) * np.log(1-X['content_id_encoded']) + (X['answered_correctly'] == 1) * np.log(X['content_id_encoded']))
         return X
 
 

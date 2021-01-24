@@ -229,7 +229,7 @@ class SaintModel:
         # If the min value is 0, the padding token is already included
         return self.categoricals[column]['n'] + self.categoricals[column]['min']
 
-    def train(self, X_train, y_train, X_test, y_test):
+    def fit(self, X_train, y_train, X_test, y_test):
         self.create_model()
 
         logging.info('- Train')

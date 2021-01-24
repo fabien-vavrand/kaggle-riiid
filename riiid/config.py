@@ -1,9 +1,10 @@
 import os
-import pickle
 import numpy as np
 
 
-PATH = r'C:\Users\chass\Kaggle\riiid'
+APPS_PATH = os.getenv('APPS_PATH', r'C:\Users\{}\app'.format(os.getlogin()))
+PATH = os.getenv('RIIID_PATH', r'C:\Users\{}\Kaggle\riiid'.format(os.getlogin()))
+SRC_PATH = os.path.join(PATH, 'kaggle-riiid')
 INPUT_PATH = os.path.join(PATH, 'data')
 MODELS_PATH = os.path.join(PATH, 'models')
 SUBMIT_PATH = os.path.join(PATH, 'submit')
@@ -54,8 +55,7 @@ PARAMS = {
         'smoothing_value': 2
     },
     'user_content_score_encoder': {
-        'smoothing_min': None,
-        'smoothing_value': 0.5
+        'smoothing_min': None
     },
     'user_rolling_score_encoder': {
         'smoothing_min': 2.5,
@@ -66,13 +66,6 @@ PARAMS = {
         'smoothing_min': 2,
         'smoothing_value': 1,
     },
-    'lgbm_params_raw': {
-        'objective': 'binary',
-        'boosting_type': 'gbdt',
-        'metric': 'auc',
-        'learning_rate': 0.1,
-        'verbosity': -1
-    },
     'lgbm_params': {
         'objective': 'binary',
         'boosting_type': 'gbdt',
@@ -82,9 +75,7 @@ PARAMS = {
         'bagging_fraction': 0.9,
         'bagging_freq': 5,
         'num_leaves': 500,
-        # 'min_child_samples': 20,
-        # 'lambda_l1': 1.7e-3,
-        # 'lambda_l2': 4.3e-7,
+        'min_child_samples': 1100,
         'verbosity': -1
     },
     'mlp_params': {

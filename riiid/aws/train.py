@@ -1,7 +1,6 @@
-import time
 import logging
 
-from doppel import DoppelProject
+from doppel import terminate
 from doppel.aws.s3 import S3Bucket
 
 from riiid.core.data import DataLoader, preprocess_questions, preprocess_lectures
@@ -9,13 +8,11 @@ from riiid.core.model import RiiidModel
 from riiid.validation import merge_test
 from riiid.config import PARAMS
 from riiid import cache
-
 from riiid.aws.cache import S3CacheManager
-from riiid.aws.train_start import CONTEXT
+from riiid.aws.config import CONTEXT
 
 
 CONTEXT.get_logger()
-
 
 try:
     cache.CACHE_MANAGER = S3CacheManager('kaggle-riiid-cache')
@@ -39,8 +36,8 @@ try:
     bucket.save_multiparts(model.save_with_source(), model.get_name())
 
     logging.info('Saving data')
-    for data, name in [(X, 'X.pkl'), (y, 'y.pkl'), (train, 'train.pkl'), (valid, 'valid.pkl')]:
-        bucket.save_pickle_multiparts(data, name)
+    for data, name in [(X, 'X'), (y, 'y'), (train, 'train'), (valid, 'valid')]:
+        bucket.save_pickle_multiparts(data, name + '.pkl')
 
     model.fit_lgbm(X[train], y[train], X[valid], y[valid])
     bucket.save_pickle_multiparts(model.models[-1], model.get_name('lgbm.pkl'))
@@ -52,7 +49,4 @@ except Exception as e:
     logging.info(str(e))
 
 finally:
-    logging.info('Finished')
-    time.sleep(30)
-    if CONTEXT.is_doppel:
-        DoppelProject(CONTEXT.doppel_name).terminate()
+    terminate(CONTEXT)

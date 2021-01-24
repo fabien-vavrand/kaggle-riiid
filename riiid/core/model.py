@@ -27,6 +27,7 @@ from riiid.core.answers import AnswersEncoder, IncorrectAnswersEncoder, UserAnsw
 from riiid.core.transformers import ColumnsSelector, MemoryUsageLogger, RatioTransformer, WeightedAnswerTransformer, TypesTransformer, DensityTransformer
 from riiid.core.featurers import SessionFeaturer, LecturesFeaturer, QuestionsFeaturer, LaggingFeaturer
 from riiid.core.embedders import QuestionsEmbedder, AnswersCorrectnessEmbedder
+from riiid.core.neural import NeuralModel
 
 
 class RiiidModel:
@@ -106,7 +107,6 @@ class RiiidModel:
             ScoreEncoder(['user_7900', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
             ScoreEncoder(['tasks_bucket_3', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, **self.params['score_encoder_2']),
             ScoreEncoder(['tasks_bucket_12', 'content_id'], cv=cv, parent_prior='tasks_bucket_3_content_id_encoded', updatable=True, **self.params['score_encoder_2']),
-            #ScoreEncoder(['prior_question_had_explanation', 'content_id'], cv=cv, parent_prior='content_id_encoded', updatable=True, transformable=False, **self.params['score_encoder_2']),
 
             WeightedAnswerTransformer('content_id_encoded'),
 
@@ -216,26 +216,8 @@ class RiiidModel:
         cv.append((Xtrain.index.values, X[valid].index.values, False))
         return cv
 
-    # Deprecated
-    def get_validation_set(self, tests):
-        X, y = [], []
-        for i, test in enumerate(tests):
-            if i % 500 == 0:
-                logging.info('Computing validation set: {}/{}'.format(i, len(tests)))
-            test = self.update(test)
-            test = self.lectures_pipeline.transform(test)
-            test = self.remove_lectures(test)
-            if len(test) > 0:
-                y.append(test['answered_correctly'])
-                test = self.pipeline.transform(test)
-                X.append(test)
-        X = pd.concat(X)
-        y = pd.concat(y)
-        return X, y
-
     def fit_lgbm(self, X, y, X_val, y_val):
         logging.info('- Fit lightgbm model')
-
         train_set = lgb.Dataset(X, y)
         val_set = lgb.Dataset(X_val, y_val)
         model = lgb.train(
@@ -268,6 +250,16 @@ class RiiidModel:
             'best_iteration': best_iteration
         })
         logging.info('Best score = {:.2%}, in {} iterations'.format(best_score, best_iteration))
+
+    def fit_neural(self, X, y, X_val, y_val):
+        logging.info('- Fit MLP model')
+        nn = NeuralModel(self.params['mlp_params'])
+        nn.fit(X, y, X_val, y_val)
+        self.models.append({
+            'model': nn,
+            'best_score': nn.scores['val_auc']
+        })
+        logging.info('Best score = {:.2%}'.format(nn.scores['val_auc']))
 
     def fit_blender(self, X, y):
         logging.info('- Fit blender')
@@ -342,6 +334,9 @@ class RiiidModel:
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip:
             zip.writestr('context.txt', self.dumps_context())
+            for model in self.models:
+                if isinstance(model['model'], NeuralModel):
+                    model['model'].zip_model_weights(zip)
             zip.writestr('model.pkl', pickle.dumps(self, protocol=pickle.HIGHEST_PROTOCOL))
 
         if path is None:
@@ -407,17 +402,35 @@ class RiiidModel:
 
     @staticmethod
     def load(path, working_path=None):
-        if path.endswith('.zip'):
-            with zipfile.ZipFile(path, 'r') as zip:
-                model = pickle.loads(zip.read('model.pkl'))
-                if working_path is None:
-                    working_path = str(Path(path).parent)
-                model.context_path = os.path.join(working_path, 'context.txt')
-                model.context_loaded = set()
-                zip.extract('context.txt', working_path)
-            return model
-        else:
-            model = load_pkl(os.path.join(path, 'model.pkl'))
-            model.context_path = os.path.join(path, 'context.txt')
+        if not path.endswith('.zip'):
+            return RiiidModel.load_from_folder(path)
+
+        if working_path is None:
+            working_path = str(Path(path).parent)
+
+        with zipfile.ZipFile(path, 'r') as zip:
+            model = pickle.loads(zip.read('model.pkl'))
+
+            # Extract and load weights
+            for m in model.models:
+                if isinstance(m['model'], NeuralModel):
+                    zip.extract('model.h5', working_path)
+                    m['model'].load_model_weights(working_path)
+
+            # Extract context
+            zip.extract('context.txt', working_path)
+            model.context_path = os.path.join(working_path, 'context.txt')
             model.context_loaded = set()
-            return model
+        return model
+
+    @staticmethod
+    def load_from_folder(path):
+        model = load_pkl(os.path.join(path, 'model.pkl'))
+
+        for m in model.models:
+            if isinstance(m['model'], NeuralModel):
+                m['model'].load_model_weights(path)
+
+        model.context_path = os.path.join(path, 'context.txt')
+        model.context_loaded = set()
+        return model

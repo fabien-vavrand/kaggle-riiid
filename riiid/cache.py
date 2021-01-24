@@ -1,5 +1,4 @@
 import os
-import pickle
 
 from riiid.config import PATH, ACTIVATE_CACHE
 from riiid.core.data import load_pkl, save_pkl

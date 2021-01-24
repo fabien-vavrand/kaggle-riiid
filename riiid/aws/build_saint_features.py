@@ -1,17 +1,14 @@
-import time
 import logging
 
-from doppel import DoppelProject
+from doppel import terminate
 from doppel.aws.s3 import S3Bucket
 
-from riiid.core.data import DataLoader, preprocess_questions, preprocess_lectures
+from riiid.core.data import DataLoader
 from riiid.saint.model import SaintModel
-
-from riiid.aws.build_saint_features_start import CONTEXT
+from riiid.aws.config import CONTEXT
 
 
 CONTEXT.get_logger()
-
 
 try:
     loader = DataLoader(CONTEXT.data_path())
@@ -31,14 +28,10 @@ try:
     bucket.save_pickle(model, model.get_name(ext='pkl'))
 
     logging.info('Saving data')
-    #bucket.save_pickle_multiparts((X_train, y_train, X_test, y_test), model.get_name('data.pkl'))
-    bucket.save_pickle((X_train, y_train, X_test, y_test), model.get_name('data.zip'), zip=True)
+    bucket.save_pickle_multiparts((X_train, y_train, X_test, y_test), model.get_name('data.pkl'))
 
 except Exception as e:
     logging.info(str(e))
 
 finally:
-    logging.info('Finished')
-    time.sleep(30)
-    if CONTEXT.is_doppel:
-        DoppelProject(CONTEXT.doppel_name).terminate()
+    terminate(CONTEXT)

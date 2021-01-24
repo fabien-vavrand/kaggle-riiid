@@ -4,9 +4,6 @@ import pandas as pd
 import itertools
 import logging
 
-from riiid.core.data import DataLoader, save_pkl, load_pkl
-from riiid.config import INPUT_PATH
-
 
 class StartPicker:
 
@@ -121,31 +118,6 @@ def build_train(X):
     X = X.drop(columns=['batch_id'])
     return X
 
-"""
-# deprecated
-def build_train_test(train, test):
-    X = pd.merge(train, test, on=['user_id', 'task_container_id'], how='left')
-    test = build_test(X)
-    train = build_train(X)
-
-    train_size = len(train)
-    validation_size = np.sum([len(b) for b in test])
-    validation_ratio = validation_size / (train_size + validation_size)
-    logging.info(f'Train size = {train_size}, validation size = {validation_size} [{validation_ratio:.1%}]')
-
-    first_batch_id = np.min(X['batch_id'])
-    last_batch_id = np.max(X['batch_id'])
-    logging.info(f'{len(test)} batches, from batch id {first_batch_id:.0f}, to batch id = {last_batch_id:.0f}')
-
-    users = set(X['user_id'].values)
-    train_users = set(train['user_id'].values)
-    validation_users = set(X[-pd.isnull(X['batch_id'])]['user_id'].values)
-    known_users = validation_users.intersection(train_users)
-    new_users = validation_users.difference(train_users)
-    logging.info(f'{len(users)} users, o/w {len(train_users)} in train and {len(validation_users)} in validation ({len(known_users)} existing, {len(new_users)} new)')
-    return train, test
-"""
-
 
 def merge_test(train, test, validation_ratio=None, return_batches=True):
     X = pd.merge(train, test, on=['user_id', 'task_container_id'], how='left')
@@ -189,11 +161,3 @@ def merge_test(train, test, validation_ratio=None, return_batches=True):
         if return_batches:
             validation = build_test_batches(validation)
         return X, validation
-
-
-if __name__ == '__main__':
-    loader = DataLoader(INPUT_PATH)
-    train, _, _ = loader.load()
-
-    test = generate_test(train, size=5_000_000, N=20_000, seed=0)
-    save_pkl(test, os.path.join(INPUT_PATH, 'tests_1.pkl'))

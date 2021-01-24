@@ -4,26 +4,24 @@ iter_test = env.iter_test()
 
 
 import sys
-sys.path.append('/kaggle/input/riiidsource')
-
-
 import logging
+PATH = '/kaggle/input/riiid-saint-model'
+sys.path.append(PATH)
+
+
 from riiid.utils import configure_console_logging, check_versions
 from riiid.saint.model import SaintModel
 
 
 configure_console_logging()
-# check_versions()
+check_versions()
 
 logging.info('Load model')
-path = '/kaggle/input/riiid-saint-model-v0'
-model_id = 'saint_20210101_132425'
-model: SaintModel = SaintModel.load(path, model_id)
-model.load_model_from_path('gs://riiid-models/saint_20201229_122345_model')
+MODEL_ID = 'saint_20210101_132425'
+model: SaintModel = SaintModel.load(PATH, MODEL_ID)
+model.load_model_from_path('gs://riiid-models/{}_model'.format(MODEL_ID))
 
 for test, _ in iter_test:
     test = model.update(test)
     _, predictions = model.predict(test)
     env.predict(predictions)
-
-

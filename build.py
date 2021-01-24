@@ -1,5 +1,6 @@
 import re
 import os
+import io
 import zipfile
 import pathlib
 
@@ -95,11 +96,11 @@ class SourceFlattener:
 
 
 def flatten_sources():
-    builder = SourceFlattener('riiid/submit.py')
+    builder = SourceFlattener('kaggle/submit.py')
     builder.flatten()
     builder.publish('./riiid-submit.py')
 
-    builder = SourceFlattener('./riiid/train.py')
+    builder = SourceFlattener('scripts/train.py')
     builder.flatten()
     builder.publish('./riiid-train.py')
 
@@ -108,24 +109,21 @@ def get_module_path():
     return str(pathlib.Path(__file__).parent)
 
 
-def zip_package(path, model_path, model_name):
-    import io
+def zip_package(path, model_path=None, model_name=None):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip:
         for root, dirs, files in os.walk(path):
             for file in files:
                 arcname = os.path.join('riiid', os.path.relpath(os.path.join(root, file), path))
                 zip.write(os.path.join(root, file), arcname=arcname)
-        zip.write(os.path.join(model_path, model_name), arcname='model.pkl')
+        if model_path and model_name:
+            zip.write(os.path.join(model_path, model_name), arcname='model.pkl')
     return zip_buffer
 
 
 if __name__ == '__main__':
-    from riiid.config import MODELS_PATH, SUBMIT_PATH
-    model_name = 'model_20201025_191555.pkl'
+    from riiid.config import SUBMIT_PATH
+    buffer = zip_package('./riiid')
 
-    zip_buffer = zip_package('./riiid', MODELS_PATH, model_name)
-
-    zip_name = model_name.replace('pkl', 'zip')
-    with open(os.path.join(SUBMIT_PATH, zip_name), 'wb') as zip_file:
-        zip_file.write(zip_buffer.getvalue())
+    with open(os.path.join(SUBMIT_PATH, 'riiid-source.zip'), 'wb') as zip_file:
+        zip_file.write(buffer.getvalue())

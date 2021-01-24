@@ -14,7 +14,7 @@ with tpu_strategy.scope():
     model = SaintModel()
     model.batch_size = 1024  # 16 * tpu_strategy.num_replicas_in_sync
     model.epochs = 50
-    X_train, y_train, X_test, y_test = load_pkl('/kaggle/input/riiid-saint-features-v0/data.pkl')
+    X_train, y_train, X_test, y_test = load_pkl('/kaggle/input/riiid-saint-features/data.pkl')
 
     model.train(X_train, y_train, X_test, y_test)
     model.model.save('gs://riiid-models/{}'.format(model.get_name('model')))

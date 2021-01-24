@@ -64,7 +64,10 @@ class DataLoader:
         return train, questions, lectures
 
     def load_tests(self, name):
-        return load_pkl(os.path.join(self.path, name))
+        try:
+            return load_pkl(os.path.join(self.path, name))
+        except FileNotFoundError:
+            raise FileNotFoundError('Test file not found. Run scripts/build_validation.py')
 
     def load_tests_examples(self):
         return load_pkl(os.path.join(self.path, 'tests_examples.pkl'))
