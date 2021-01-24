@@ -209,11 +209,8 @@ class IncorrectAnswersEncoder:
 
     def _transform(self, X, answers_ratios, noise=None):
         X = pd.merge(X, answers_ratios, left_on='content_id', right_index=True, how='left').set_index(X.index)
-        # Implement noise if requires
+        # Implement noise if required
         return X
-
-    def update(self, X, y=None):
-        return self
 
     def update_transform(self, X, y=None):
         return X

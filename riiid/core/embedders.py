@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 from gensim.models import Word2Vec
 from sklearn.cluster import KMeans
-from sklearn.base import TransformerMixin
 from sklearn.model_selection import GroupKFold
 
 from riiid.config import FLOAT_DTYPE
@@ -15,7 +14,7 @@ logging.getLogger('gensim.models.base_any2vec').setLevel(logging.WARNING)
 logging.getLogger('gensim.models.word2vec').setLevel(logging.WARNING)
 
 
-class QuestionsEmbedder(TransformerMixin):
+class QuestionsEmbedder:
 
     def __init__(self, questions, n_clusters=30, embedding_size=40, window=5, min_count=5, sg=0, iter=30, workers=1):
         self.questions = questions

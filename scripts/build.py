@@ -96,11 +96,11 @@ class SourceFlattener:
 
 
 def flatten_sources():
-    builder = SourceFlattener('kaggle/submit.py')
+    builder = SourceFlattener('../kaggle/submit.py')
     builder.flatten()
     builder.publish('./riiid-submit.py')
 
-    builder = SourceFlattener('scripts/train.py')
+    builder = SourceFlattener('train.py')
     builder.flatten()
     builder.publish('./riiid-train.py')
 
@@ -123,7 +123,7 @@ def zip_package(path, model_path=None, model_name=None):
 
 if __name__ == '__main__':
     from riiid.config import SUBMIT_PATH
-    buffer = zip_package('./riiid')
+    buffer = zip_package('../riiid')
 
     with open(os.path.join(SUBMIT_PATH, 'riiid-source.zip'), 'wb') as zip_file:
         zip_file.write(buffer.getvalue())

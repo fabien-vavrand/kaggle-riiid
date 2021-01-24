@@ -31,22 +31,20 @@ try:
     model = RiiidModel(questions, lectures, params=PARAMS)
     X, y, train, valid = model.fit_transform(train)
 
-    logging.info('Saving unfitted model')
     bucket = S3Bucket(model.get_normalized_name())
-    bucket.save_multiparts(model.save_with_source(), model.get_name())
 
     logging.info('Saving data')
     for data, name in [(X, 'X'), (y, 'y'), (train, 'train'), (valid, 'valid')]:
         bucket.save_pickle_multiparts(data, name + '.pkl')
 
     model.fit_lgbm(X[train], y[train], X[valid], y[valid])
-    bucket.save_pickle_multiparts(model.models[-1], model.get_name('lgbm.pkl'))
-
     model.fit_catboost(X[train], y[train], X[valid], y[valid])
-    bucket.save_pickle_multiparts(model.models[-1], model.get_name('catboost.pkl'))
+
+    logging.info('Saving model')
+    bucket.save_multiparts(model.save_with_source(), model.get_name())
 
 except Exception as e:
-    logging.info(str(e))
+    logging.info('Unexpected exception: ' + str(e))
 
 finally:
     terminate(CONTEXT)
